@@ -62,11 +62,11 @@ for punctuation, feature in punctuation_to_feature.items():
 
 
 def locate_punctuations(feature, index):
+    '''Locate the corresponding punctuation based on the feature value and index. 
+    If there is no punctuation at the indexed position, raise an IndexError exception.
+    '''
     category = feature_to_punctuations[feature]
-    try:
-        return category[index]
-    except IndexError:
-        return category[0]
+    return category[index]
 
 
 # def is_english(word):

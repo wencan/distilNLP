@@ -46,8 +46,12 @@ def punctuation_normalize(model_or_modelfile, texts):
             text_index = indexes[feature_idx]
 
             onehot_idx = torch.argmax(logits[feature_idx])
-            punctuation = locate_punctuations(feature, onehot_idx)
-            chs[text_index] = punctuation
+            try:
+                punctuation = locate_punctuations(feature, onehot_idx)
+            except IndexError:
+                pass
+            else:
+                chs[text_index] = punctuation
 
         normalized.append(''.join(chs))
     
