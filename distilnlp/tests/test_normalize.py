@@ -47,7 +47,7 @@ class TestNormalize(TestCase):
                                          ['The UN Chronicle is not an official record.', 'The UN Chronicle is not an official record.'])
 
     def test_parallel(self):
-        self.assertEqual(normalize('en', ['The UN Chronicle  is not an official record.', 'The UN Chronicle  is not an official record."'], n_job=-1),
+        self.assertEqual(normalize('en', ['The UN Chronicle  is not an official record.', 'The UN Chronicle  is not an official record."'], n_jobs=-1),
                                          ['The UN Chronicle is not an official record.', 'The UN Chronicle is not an official record.'])
 
 if __name__ == '__main__':

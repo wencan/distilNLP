@@ -270,7 +270,7 @@ def _normalize(lang, text):
     return text
 
 
-def normalize(lang:Literal['en', 'zh'], text_or_test, n_job: int = 1):
+def normalize(lang:Literal['en', 'zh'], text_or_test, n_jobs: int = 1):
     '''Normalize punctuation, remove unnecessary characters and invisible characters.
     
     :param lang: Language code. Currently supports ``en`` and ``zh``.
@@ -281,7 +281,7 @@ def normalize(lang:Literal['en', 'zh'], text_or_test, n_job: int = 1):
 
     if type(text_or_test) is str:
         return _normalize(lang, text_or_test)
-    if n_job == 1:
+    if n_jobs == 1:
         return [_normalize(lang, text) for text in text_or_test]
 
-    return Parallel(n_job)(delayed(_normalize)(lang, text) for text in text_or_test)
+    return Parallel(n_jobs)(delayed(_normalize)(lang, text) for text in text_or_test)
