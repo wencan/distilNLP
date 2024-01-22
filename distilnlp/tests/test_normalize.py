@@ -42,6 +42,10 @@ class TestNormalize(TestCase):
         self.assertEqual(normalize('en', 'The UN Chronicle  is not an official record."'), 
                                          'The UN Chronicle is not an official record.')
 
+    def test_remove_number_from_ordered_list(self):
+        self.assertEqual(normalize('zh', '1. 每一届会议结束时，应在缔约国代表中选出一名主席、八名副主席和一名报告员。'),
+                                         '每一届会议结束时，应在缔约国代表中选出一名主席、八名副主席和一名报告员。')
+
     def test_texts(self):
         self.assertEqual(normalize('en', ['The UN Chronicle  is not an official record.', 'The UN Chronicle  is not an official record."']),
                                          ['The UN Chronicle is not an official record.', 'The UN Chronicle is not an official record.'])

@@ -146,6 +146,7 @@ zh_replace_table = {
 space_pattern = re.compile(r'\s+')
 half_split_pattern = re.compile(r'([\x21-\x7E\s]{3,}[^\x00-\x7F]?[\x21-\x7E\s]{3,})')
 half_match_pattern = re.compile(r'^[\x21-\x7E\s]{3,}[^\x00-\x7F]?[\x21-\x7E\s]{3,}$')
+ol_no_pattern = re.compile(r'^\d{1,3}\.\s')
 
 def _replace(ch, replace_table):
     replace = replace_table.get(ch)
@@ -168,7 +169,11 @@ def general_normalize(text):
 
     text = text.strip()
 
-    return text
+    # remove numbers from an ordered list
+    if text != '' and text[0].isdigit():
+        text = ol_no_pattern.sub('', text)
+
+    return text.strip()
 
 
 def en_normalize(text):
