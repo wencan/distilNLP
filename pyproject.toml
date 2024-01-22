@@ -17,5 +17,5 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wencan/snlp"
-Issues = "https://github.com/wencan/snlp/issues"
+Homepage = "https://github.com/wencan/distilNLP"
+Issues = "https://github.com/wencan/distilNLP/issues"
