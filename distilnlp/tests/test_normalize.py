@@ -7,12 +7,20 @@ class TestNormalize(TestCase):
                                          '人权是所有人与生俱来的权利，不分国籍、性别、宗教或任何其他身份。')
         self.assertEqual(normalize('zh', '他说："你好吗？"'), 
                                          '他说：“你好吗？”')
+        self.assertEqual(normalize('zh', '“他说："你好吗？"'), 
+                                         '他说：“你好吗？”')
+        self.assertEqual(normalize('zh', '他说："你好吗？"”'), 
+                                         '他说：“你好吗？”')
 
     def test_en(self):
         self.assertEqual(normalize('en', 'The project was started in 2007 by David Cournapeau as a Google Summer of Code project， and since then many volunteers have contributed.\nSee the About us page for a list of core contributors. '), 
                                          'The project was started in 2007 by David Cournapeau as a Google Summer of Code project, and since then many volunteers have contributed. See the About us page for a list of core contributors.')
 
         self.assertEqual(normalize('en', 'He said, “How are you?”'), 
+                                         'He said, "How are you?"')
+        self.assertEqual(normalize('en', '"He said, “How are you?”'), 
+                                         'He said, "How are you?"')
+        self.assertEqual(normalize('en', 'He said, “How are you?”"'), 
                                          'He said, "How are you?"')
 
     def test_zh_en(self):

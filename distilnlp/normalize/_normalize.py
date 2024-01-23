@@ -186,7 +186,7 @@ def en_normalize(text):
     if text.startswith('"') and text.count('"')%2==1:
         text = text[1:]
     if text.endswith('"') and text.count('"')%2==1:
-        text = text[:len(text)-1]
+        text = text[:-1]
 
     return text
 
@@ -242,7 +242,7 @@ def zh_normalize(text):
     if text.startswith('“') and text.count('“') > text.count('”') :
         text = text[1:]
     if text.endswith('”') and text.count('“') < text.count('”'):
-        text = text[:len(text)-1]
+        text = text[:-1]
     
     quotes_count = 0
     for i, ch in enumerate(text):
