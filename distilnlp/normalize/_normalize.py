@@ -167,6 +167,8 @@ def general_normalize(text):
     text = filter(lambda ch: ch.isprintable() or ch in ('\n', '\t'), text)
     text = ''.join(text)
 
+    text = space_pattern.sub(' ', text)
+
     text = text.strip()
 
     # remove numbers from an ordered list
@@ -180,7 +182,6 @@ def en_normalize(text):
     '''more normalizate for English.'''
     text = map(en_replace, text)
     text = ''.join(text)
-    text = space_pattern.sub(' ', text)
 
     # remove unnecessary `"`
     if text.startswith('"') and text.count('"')%2==1:
@@ -194,7 +195,7 @@ def en_normalize(text):
 def _zh_part_norm(part):
     part = map(zh_replace, part)
     part = ''.join(part)
-    part = space_pattern.sub('', part)
+    # part = space_pattern.sub('', part)
     return part
 
 

@@ -13,7 +13,7 @@ class TestNormalize(TestCase):
                                          '他说：“你好吗？”')
 
     def test_en(self):
-        self.assertEqual(normalize('en', 'The project was started in 2007 by David Cournapeau as a Google Summer of Code project， and since then many volunteers have contributed.\nSee the About us page for a list of core contributors. '), 
+        self.assertEqual(normalize('en', 'The project was started in 2007 by David Cournapeau as a Google Summer of Code project， \nand since then many volunteers have contributed.\nSee the About us page for a list of core contributors. '), 
                                          'The project was started in 2007 by David Cournapeau as a Google Summer of Code project, and since then many volunteers have contributed. See the About us page for a list of core contributors.')
 
         self.assertEqual(normalize('en', 'He said, “How are you?”'), 
@@ -24,8 +24,10 @@ class TestNormalize(TestCase):
                                          'He said, "How are you?"')
 
     def test_zh_en(self):
-        self.assertEqual(normalize('zh', '这是一句夹杂着英文的中文文本。He said： "Who speaks English?"。 \n结束.'), 
+        self.assertEqual(normalize('zh', '这是一句夹杂着英文的中文文本。He said： "Who speaks English?"。结束.'), 
                                          '这是一句夹杂着英文的中文文本。He said: "Who speaks English?"。结束。')
+        self.assertEqual(normalize('zh', '请注意 float.hex() 是实例方法，而 float.fromhex() 是类方法。'), 
+                                         '请注意 float.hex() 是实例方法，而 float.fromhex() 是类方法。')
 
     def test_zh_with_url(self):
         self.assertEqual(normalize('zh', '百度的网址是：  http：//baidu.com'),

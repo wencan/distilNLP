@@ -1,6 +1,6 @@
 [project]
 name = "distilNLP"
-version = "0.0.4"
+version = "0.0.4.20240124"
 authors = [
   { name="wencan", email="i@wencan.org" },
 ]
