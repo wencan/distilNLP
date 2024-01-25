@@ -1,8 +1,7 @@
 import re
-from typing import Literal, Union, Sequence
+import string
+import unicodedata
 from functools import partial
-from io import StringIO
-from joblib import Parallel, delayed
 from ._emoji import EMOJI_DICT
 
 __all__ = [
@@ -13,7 +12,7 @@ std_replace_table = {
     ' ': ' ', # added at 2024-01-22
     '　': ' ',
     # '！': '!',
-    # '＂': '"',
+    '＂': '"',
     '＃': '#',
     '＄': '$',
     '％': '%',
@@ -108,45 +107,39 @@ std_replace_table = {
     '～': '~',
 }
 
-en_replace_table = {
+
+_right_full2half_table = {
     '！': '!',
-    '＂': '"',
-    '（': '(',
+    # '＂': '"',
     '）': ')',
     '．': '.',
+    '。': '.',
     '：': ':',
     '；': ';',
     '？': '?',
     '“': '"',
-    '”': '"',
-    '「': '"',
-    '」': '"',
-    '『': '"',
-    '』': '"',
 }
 
-zh_replace_table = {
+_right_half2full_table = {
+    ',': '，',
     '!': '！',
-    # '"': '＂',
-    '(': '（',
     ')': '）',
     '.': '。',
-    '．': '。',
-    '｡': '。',
     ':': '：',
     ';': '；',
     '?': '？',
-    ',': '，',
-    '「': '“',
-    '」': '”',
-    '『': '“',
-    '』': '”',
+}
+
+_left_full2half_table = {
+    '（': '(',
+    '”': '"',
+}
+
+_left_half2full_table = {
+    '(': '（',
 }
 
 space_pattern = re.compile(r'\s+')
-half_split_pattern = re.compile(r'([\x21-\x7E\s]{3,}[^\x00-\x7F]?[\x21-\x7E\s]{3,})')
-half_match_pattern = re.compile(r'^[\x21-\x7E\s]{3,}[^\x00-\x7F]?[\x21-\x7E\s]{3,}$')
-ol_no_pattern = re.compile(r'^\d{1,3}\.\s')
 
 def _replace(ch, replace_table):
     replace = replace_table.get(ch)
@@ -156,8 +149,6 @@ def _replace(ch, replace_table):
 
 
 std_replace = partial(_replace, replace_table=std_replace_table)
-en_replace = partial(_replace, replace_table=en_replace_table)
-zh_replace = partial(_replace, replace_table=zh_replace_table)
 
 
 def general_normalize(text):
@@ -174,31 +165,79 @@ def general_normalize(text):
     return text.strip()
 
 
-def en_normalize(text):
-    '''more normalizate for English.'''
-    text = map(en_replace, text)
-    text = ''.join(text)
+def char_kind(ch):
+    tag = ''
+    if ch in string.ascii_letters:
+        return 'E' # English and digit
+    elif '\u4e00' <= ch <= '\u9fff':
+        return 'C' # Chinese
+    if ch == ' ':
+        tag = 'S' # space
+    elif '\uff00' <= ch <= '\uffef':
+        tag = 'F' # full width punctuation
+    elif 33 <= ord(ch) <= 126:
+        tag = 'H' # falf width punctuation
+    else:
+        tag = 'O' # Other
+    return tag
 
-    # remove unnecessary `"`
-    count = 0
-    if text.startswith('"') or text.endswith('"'):
-        for idx, ch in enumerate(text):
-            if ch == '"':
-                count+=1
-    if count == 1:
-        if text.startswith('"'):
-            text = text[1:]
-        if text.endswith('"'):
-            text = text[:-1]
 
+def width_form_normalize(text):
+    chs = []
+    kinds = [char_kind(ch) for ch in text]
+    # print(text, kinds)
+
+    for idx, ch in enumerate(text):
+        kind = kinds[idx]
+        
+        pre_ch_kind = ''
+        i = idx-1
+        while i>=0:
+            if kinds[i] == 'S': # space
+                i+=1
+                continue
+            pre_ch_kind = kinds[i]
+            break
+            # if kinds[i] in ('E', 'C'):
+            #     pre_ch_kind = kinds[i]
+            #     break
+            # i-=1
+        
+        next_ch_kind = ''
+        i = idx+1
+        while i<len(text):
+            # if kinds[i] in ('E', 'C'):
+            #     next_ch_kind = kinds[i]
+            # i+=1
+            if kinds[i] == 'S': # space
+                i-=1
+                continue
+            next_ch_kind = kinds[i]
+            break
+
+        if kind == 'F':
+            if pre_ch_kind == 'E':
+                if ch in _right_full2half_table.keys():
+                    ch = _right_full2half_table[ch]
+                    kind = 'H'
+            if next_ch_kind == 'E':
+                if ch in _left_full2half_table.keys():
+                    ch = _left_full2half_table[ch]
+                    kind = 'H'
+        elif kind == 'H':
+            if pre_ch_kind == 'C':
+                if ch in _right_half2full_table.keys():
+                    ch = _right_half2full_table[ch]
+                    kind = 'F'
+            if next_ch_kind == 'C':
+                if ch in _left_half2full_table.keys():
+                    ch = _left_half2full_table[ch]
+                    kind = 'F'
+        
+        chs.append(ch)
+
+    text = ''.join(chs)
     return text
-
-
-def _zh_part_norm(part):
-    part = map(zh_replace, part)
-    part = ''.join(part)
-    # part = space_pattern.sub('', part)
-    return part
 
 
 def _left_char(i, text):
@@ -223,23 +262,18 @@ def _right_char(i, text):
     return right
 
 
-def zh_normalize(text):
-    '''more normalizate for Chinese.'''
-
-    if any(ch for ch in text if ch.isalpha()):
-        parts = half_split_pattern.split(text)
-        norm_parts = []
-        for part in parts:
-            if half_match_pattern.match(part):
-                part = en_normalize(part)
-                norm_parts.append(part)
-                continue
-
-            part = _zh_part_norm(part)
-            norm_parts.append(part)
-        text = ''.join(norm_parts)
-    else:
-        text = _zh_part_norm(text)
+def quote_normalize(text):
+    # remove unnecessary `"`
+    count = 0
+    if text.startswith('"') or text.endswith('"'):
+        for idx, ch in enumerate(text):
+            if ch == '"':
+                count+=1
+    if count == 1:
+        if text.startswith('"'):
+            text = text[1:]
+        if text.endswith('"'):
+            text = text[:-1]
 
     # remove unnecessary `“` or `”`
     stack = []
@@ -272,22 +306,16 @@ def zh_normalize(text):
                 else:
                     text = text[:i] + '”' + text[i+1:]
             quotes_count+=1
-
+    
     return text
 
 
-def normalize(lang:Literal['en', 'zh'], text: str):
+def normalize(text: str):
     '''Normalize punctuation, remove unnecessary characters and invisible characters.
-    
-    :param lang: Language code. Currently supports ``en`` and ``zh``.
-    :param text_or_test : String or string sequence.
     '''
 
     text = general_normalize(text)
-
-    if lang == 'en':
-        text = en_normalize(text)
-    elif lang == 'zh':
-        text = zh_normalize(text)
+    text = width_form_normalize(text)
+    text = quote_normalize(text)
     
     return text
