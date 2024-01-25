@@ -11,16 +11,20 @@ class TestNormalize(TestCase):
                                          '他说：“你好吗？”')
         self.assertEqual(normalize('zh', '他说："你好吗？"”'), 
                                          '他说：“你好吗？”')
+        self.assertEqual(normalize('zh', '“他说：“你好吗？””'), 
+                                         '“他说：“你好吗？””')
+        self.assertEqual(normalize('zh', '你知道吗？'), 
+                                         '你知道吗？')
 
     def test_en(self):
         self.assertEqual(normalize('en', 'The project was started in 2007 by David Cournapeau as a Google Summer of Code project， \nand since then many volunteers have contributed.\nSee the About us page for a list of core contributors. '), 
                                          'The project was started in 2007 by David Cournapeau as a Google Summer of Code project, and since then many volunteers have contributed. See the About us page for a list of core contributors.')
 
-        self.assertEqual(normalize('en', 'He said, “How are you?”'), 
-                                         'He said, "How are you?"')
-        self.assertEqual(normalize('en', '"He said, “How are you?”'), 
-                                         'He said, "How are you?"')
-        self.assertEqual(normalize('en', 'He said, “How are you?”"'), 
+        self.assertEqual(normalize('en', 'How are you?”'), 
+                                         'How are you?')
+        self.assertEqual(normalize('en', '"How are you?'), 
+                                         'How are you?')
+        self.assertEqual(normalize('en', 'He said, "How are you?"'), 
                                          'He said, "How are you?"')
 
     def test_zh_en(self):
@@ -28,6 +32,12 @@ class TestNormalize(TestCase):
                                          '这是一句夹杂着英文的中文文本。He said: "Who speaks English?"。结束。')
         self.assertEqual(normalize('zh', '请注意 float.hex() 是实例方法，而 float.fromhex() 是类方法。'), 
                                          '请注意 float.hex() 是实例方法，而 float.fromhex() 是类方法。')
+        self.assertEqual(normalize('zh', '请注意 float.hex() 是实例方法，而 float.fromhex() 是类方法。'), 
+                                         '请注意 float.hex() 是实例方法，而 float.fromhex() 是类方法。')
+        self.assertEqual(normalize('zh', '例如 var x = 42。'),
+                                         '例如 var x = 42。')
+        self.assertEqual(normalize('zh', '就像这样 let { bar } = foo。'),
+                                         '就像这样 let { bar } = foo。')
 
     def test_zh_with_url(self):
         self.assertEqual(normalize('zh', '百度的网址是：  http：//baidu.com'),
@@ -51,18 +61,6 @@ class TestNormalize(TestCase):
                                          'The UN Chronicle is not an official record.')
         self.assertEqual(normalize('en', 'The UN Chronicle  is not an official record."'), 
                                          'The UN Chronicle is not an official record.')
-
-    def test_remove_number_from_ordered_list(self):
-        self.assertEqual(normalize('zh', '1. 每一届会议结束时，应在缔约国代表中选出一名主席、八名副主席和一名报告员。'),
-                                         '每一届会议结束时，应在缔约国代表中选出一名主席、八名副主席和一名报告员。')
-
-    def test_texts(self):
-        self.assertEqual(normalize('en', ['The UN Chronicle  is not an official record.', 'The UN Chronicle  is not an official record."']),
-                                         ['The UN Chronicle is not an official record.', 'The UN Chronicle is not an official record.'])
-
-    def test_parallel(self):
-        self.assertEqual(normalize('en', ['The UN Chronicle  is not an official record.', 'The UN Chronicle  is not an official record."'], n_jobs=-1),
-                                         ['The UN Chronicle is not an official record.', 'The UN Chronicle is not an official record.'])
 
 if __name__ == '__main__':
     main()

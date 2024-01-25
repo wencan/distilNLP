@@ -171,10 +171,6 @@ def general_normalize(text):
 
     text = text.strip()
 
-    # remove numbers from an ordered list
-    if text != '' and text[0].isdigit():
-        text = ol_no_pattern.sub('', text)
-
     return text.strip()
 
 
@@ -184,10 +180,16 @@ def en_normalize(text):
     text = ''.join(text)
 
     # remove unnecessary `"`
-    if text.startswith('"') and text.count('"')%2==1:
-        text = text[1:]
-    if text.endswith('"') and text.count('"')%2==1:
-        text = text[:-1]
+    count = 0
+    if text.startswith('"') or text.endswith('"'):
+        for idx, ch in enumerate(text):
+            if ch == '"':
+                count+=1
+    if count == 1:
+        if text.startswith('"'):
+            text = text[1:]
+        if text.endswith('"'):
+            text = text[:-1]
 
     return text
 
@@ -240,10 +242,19 @@ def zh_normalize(text):
         text = _zh_part_norm(text)
 
     # remove unnecessary `“` or `”`
-    if text.startswith('“') and text.count('“') > text.count('”') :
-        text = text[1:]
-    if text.endswith('”') and text.count('“') < text.count('”'):
-        text = text[:-1]
+    stack = []
+    if text.startswith('“') or text.endswith('”'):
+        for idx, ch in enumerate(text):
+            if ch == '“':
+                stack.append(ch)
+            elif ch == '”':
+                if stack:
+                    stack = stack[:-1]
+                else:
+                    if idx == len(text)-1:
+                        text = text[:-1]
+        if stack:
+            text = text[1:]
     
     quotes_count = 0
     for i, ch in enumerate(text):
@@ -265,7 +276,13 @@ def zh_normalize(text):
     return text
 
 
-def _normalize(lang, text):
+def normalize(lang:Literal['en', 'zh'], text: str):
+    '''Normalize punctuation, remove unnecessary characters and invisible characters.
+    
+    :param lang: Language code. Currently supports ``en`` and ``zh``.
+    :param text_or_test : String or string sequence.
+    '''
+
     text = general_normalize(text)
 
     if lang == 'en':
@@ -274,20 +291,3 @@ def _normalize(lang, text):
         text = zh_normalize(text)
     
     return text
-
-
-def normalize(lang:Literal['en', 'zh'], text_or_test, n_jobs: int = 1):
-    '''Normalize punctuation, remove unnecessary characters and invisible characters.
-    
-    :param lang: Language code. Currently supports ``en`` and ``zh``.
-    :param text_or_test : String or string sequence.
-    :param n_jobs : int, default=1. Number of parallel jobs to run.
-        ``-1`` means using all processors.
-    '''
-
-    if type(text_or_test) is str:
-        return _normalize(lang, text_or_test)
-    if n_jobs == 1:
-        return [_normalize(lang, text) for text in text_or_test]
-
-    return Parallel(n_jobs)(delayed(_normalize)(lang, text) for text in text_or_test)
