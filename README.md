@@ -1,5 +1,7 @@
 # distilNLP
-The purpose of this project is to provide a set of natural language processing toolkits that are out-of-the-box, low-dependency, high-performance, and can achieve good results in solving real-world problems. At this stage, this project is mainly for learning and research use only.
+本项目的目的是提供一套开箱即用、低依赖、高性能、解决实际问题能取得良好效果的自然语言处理工具箱。现阶段，本项目仅限学习和研究使用。
+
+The purpose of this project is to provide a set of natural language processing (NLP) tools that are ready-to-use, have low dependencies, high performance, and can achieve good results in solving real-world problems. At this stage, this project is only for learning and research purposes.
 
 # Install
 
@@ -10,6 +12,7 @@ pip install -U distilNLP
 # Usage
 
 ## Text Normalize
+文本正规化移除多余的字符，矫正错误的标点符号。
 Text normalization processing removes redundant characters and corrects incorrect punctuation.
 ```python
 from distilnlp import text_normalize
