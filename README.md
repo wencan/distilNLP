@@ -13,6 +13,7 @@ pip install -U distilNLP
 
 ## Text Normalize
 文本正规化移除多余的字符，矫正错误的标点符号。
+
 Text normalization processing removes redundant characters and corrects incorrect punctuation.
 ```python
 from distilnlp import text_normalize
