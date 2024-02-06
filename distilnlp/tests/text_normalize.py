@@ -28,6 +28,8 @@ class TextNormalize(TestCase):
                                         '例如 var x = 42。')
         self.assertEqual(text_normalize('就像这样 let { bar } = foo。'),
                                         '就像这样 let { bar } = foo。')
+        self.assertEqual(text_normalize('百度的网址是 http：//www.baidu。com'),
+                                        '百度的网址是 http://www.baidu.com')
     
     def test_un_mix_text(self):
         # self.assertEqual(text_normalize('关键业绩指标2：人力资源'),
