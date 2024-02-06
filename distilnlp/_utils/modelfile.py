@@ -1,10 +1,8 @@
-import sys
+import shutil
 import os
 import platform
 import urllib.request
 from typing import Literal
-
-import tqdm
 
 __all__ = ['downloaded_model_filepath']
 
@@ -33,12 +31,9 @@ def downloaded_model_filepath(name: str, version: str, url: str, serialize_type:
 
     if os.path.exists(file_path):
         return file_path
-    
-    # delete files that have not been downloaded completely.
-    download_path = os.path.join(model_dir, filename+'.downloading')
-    if os.path.exists(download_path):
-        os.remove(download_path)
-    
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+       
     # other versions
     exists_filepaths = []
     for dir, _, filepaths in os.walk(model_dir):
@@ -46,14 +41,8 @@ def downloaded_model_filepath(name: str, version: str, url: str, serialize_type:
         exists_filepaths.extend(filepaths)
     
     # download
-    response = urllib.request.urlopen(url)
-    file_size = int(response.getheader("Content-Length"))
-    with tqdm(total=file_size, unit="B", unit_scale=True) as pbar:
-        with open(download_path, 'wb') as outfile:
-            for chunk in response.iter_content():
-                outfile.write(chunk)
-                pbar.update(len(chunk))
-    os.rename(download_path, file_path)
+    filename, _ = urllib.request.urlretrieve(url)
+    shutil.move(filename, file_path)
 
     # delete other versions
     for filepath in exists_filepaths:
