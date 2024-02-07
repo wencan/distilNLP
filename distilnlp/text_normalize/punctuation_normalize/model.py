@@ -1,11 +1,13 @@
 
 import torch
 
+from .feature import label_dim
+
 class BiGRUModule(torch.nn.Module):
     _input_size=1
     _gru_hidden_size = 16
     _num_gru_layers = 2
-    _out_dim = 3 # label dim
+    _out_dim = label_dim
     _dropout = 0.2
 
     def __init__(self):

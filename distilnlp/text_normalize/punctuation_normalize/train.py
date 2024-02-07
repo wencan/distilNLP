@@ -45,14 +45,21 @@ def train(model, loader, optimizer):
 
     model.train()
     total, total_acc, total_loss = 0, 0, 0
+    forward_seconds, check_seconds, backward_seconds = 0, 0, 0
 
     for text_seqs, labels_seqs, lengths in tqdm.tqdm(loader):
+        t1 = time.time()
+
         optimizer.zero_grad()
         outputs = model(text_seqs, lengths)
 
+        t2 = time.time()
+        forward_seconds += t2 - t1
+
         loss = 0
-        for idx, labels in enumerate(labels_seqs):
-            mask = torch.tensor([torch.sum(label) for label in labels], dtype=torch.bool)
+        for idx, labels in enumerate(labels_seqs): # label is one hot format. default: [0, 0, 0]
+            # mask = torch.as_tensor([torch.sum(label) for label in labels], dtype=torch.bool)
+            mask = torch.sum(labels, dim=1) == 1
             labels = labels[mask]
             if labels.size(0) == 0: # no punctuation
                 continue
@@ -70,12 +77,18 @@ def train(model, loader, optimizer):
             acc = torch.sum(torch.argmax(labels, dim=1) == torch.argmax(output, dim=1)).float()
             total_acc += acc.item()
         
+        t3 = time.time()
+        check_seconds += t3 -t2
+        
         if loss == 0:
             continue
         loss.backward()
         optimizer.step()
+
+        t4 = time.time()
+        backward_seconds += t4 - t3
     
-    return total_acc/total, total_loss/total
+    return total_acc/total, total_loss/total, forward_seconds, check_seconds, backward_seconds
 
 
 def valid(model, loader):
@@ -89,7 +102,8 @@ def valid(model, loader):
 
             loss = 0
             for idx, labels in enumerate(labels_seqs): # label is one hot format. default: [0, 0, 0]
-                mask = torch.tensor([torch.sum(label) for label in labels], dtype=torch.bool)
+                # mask = torch.tensor([torch.sum(label) for label in labels], dtype=torch.bool)
+                mask = torch.sum(labels, dim=1) == 1
                 labels = labels[mask]
                 if labels.size(0) == 0: # no punctuation
                     continue
@@ -123,8 +137,9 @@ def cross_train_valid(model, preprocessed_path, data_indexes, learning_rate, num
         train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=True, collate_fn=collate_batch)
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
-        acc_train, loss_train = train(model, train_loader, optimizer)
-        log(f'Epoch {epoch+1} train accuracy: {acc_train:.6f} train loss: {loss_train:.6f}')
+        acc_train, loss_train, forward_seconds, check_seconds, backward_seconds = train(model, train_loader, optimizer)
+        log(f'Epoch {epoch+1} train accuracy: {acc_train:.6f} train loss: {loss_train:.6f}, '\
+            f'forward propagation: {int(forward_seconds)}s, check loss: {int(check_seconds)}s, backward propagation: {int(backward_seconds)}s')
 
         acc_valid, loss_valid = valid(model, valid_loader)
         log(f'Epoch {epoch+1} valid accuracy: {acc_valid:.6f} valid loss: {loss_valid:.6f}')
