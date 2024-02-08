@@ -35,7 +35,7 @@ DEVICE = (
 def collate_batch(batch):
     lengths = torch.as_tensor([len(item[0]) for item in batch]) # cpu
     features_seqs = torch.nn.utils.rnn.pad_sequence([torch.tensor(item[0], device=DEVICE) for item in batch], batch_first=True)
-    labels_seqs = [torch.tensor(item[1], device=DEVICE) for item in batch]
+    labels_seqs = torch.nn.utils.rnn.pad_sequence([torch.tensor(item[1], device=DEVICE) for item in batch], batch_first=True)
 
     return features_seqs, labels_seqs, lengths
 
@@ -44,7 +44,7 @@ def train(model, loader, optimizer):
     loss_fn = torch.nn.CrossEntropyLoss()
 
     model.train()
-    total, total_acc, total_loss = 0, 0, 0
+    total, total_loss = 0, 0
     forward_seconds, check_seconds, backward_seconds = 0, 0, 0
 
     for text_seqs, labels_seqs, lengths in tqdm.tqdm(loader):
@@ -56,16 +56,16 @@ def train(model, loader, optimizer):
         t2 = time.time()
         forward_seconds += t2 - t1
 
+        masks = torch.sum(labels_seqs, dim=2) == 1
+
         loss = 0
         for idx, labels in enumerate(labels_seqs): # label is one hot format. default: [0, 0, 0]
-            # mask = torch.as_tensor([torch.sum(label) for label in labels], dtype=torch.bool)
-            mask = torch.sum(labels, dim=1) == 1
+            mask = masks[idx]
             labels = labels[mask]
             if labels.size(0) == 0: # no punctuation
                 continue
 
             output = outputs[idx]
-            mask = torch.nn.functional.pad(mask, (0, len(output)-len(mask)), value=False)
             output = output[mask]
             loss_one = loss_fn(output, labels.float())
 
@@ -74,8 +74,9 @@ def train(model, loader, optimizer):
             total += len(labels)
             total_loss += loss_one.item()
 
-            acc = torch.sum(torch.argmax(labels, dim=1) == torch.argmax(output, dim=1)).float()
-            total_acc += acc.item()
+            # for saving time
+            # acc = torch.sum(torch.argmax(labels, dim=1) == torch.argmax(output, dim=1)).float()
+            # total_acc += acc.item()
         
         t3 = time.time()
         check_seconds += t3 -t2
@@ -88,7 +89,7 @@ def train(model, loader, optimizer):
         t4 = time.time()
         backward_seconds += t4 - t3
     
-    return total_acc/total, total_loss/total, forward_seconds, check_seconds, backward_seconds
+    return total_loss/total, forward_seconds, check_seconds, backward_seconds
 
 
 def valid(model, loader):
@@ -100,16 +101,16 @@ def valid(model, loader):
         for features_seqs, labels_seqs, lengths in tqdm.tqdm(loader):
             outputs = model(features_seqs, lengths)
 
+            masks = torch.sum(labels_seqs, dim=2) == 1
+
             loss = 0
             for idx, labels in enumerate(labels_seqs): # label is one hot format. default: [0, 0, 0]
-                # mask = torch.tensor([torch.sum(label) for label in labels], dtype=torch.bool)
-                mask = torch.sum(labels, dim=1) == 1
+                mask = masks[idx]
                 labels = labels[mask]
                 if labels.size(0) == 0: # no punctuation
                     continue
 
                 output = outputs[idx]
-                mask = torch.nn.functional.pad(mask, (0, len(output)-len(mask)), value=False)
                 output = output[mask]
                 loss_one = loss_fn(output, labels.float())
 
@@ -137,8 +138,8 @@ def cross_train_valid(model, preprocessed_path, data_indexes, learning_rate, num
         train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=True, collate_fn=collate_batch)
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
-        acc_train, loss_train, forward_seconds, check_seconds, backward_seconds = train(model, train_loader, optimizer)
-        log(f'Epoch {epoch+1} train accuracy: {acc_train:.6f} train loss: {loss_train:.6f}, '\
+        loss_train, forward_seconds, check_seconds, backward_seconds = train(model, train_loader, optimizer)
+        log(f'Epoch {epoch+1} train loss: {loss_train:.6f}, '\
             f'forward propagation: {int(forward_seconds)}s, check loss: {int(check_seconds)}s, backward propagation: {int(backward_seconds)}s')
 
         acc_valid, loss_valid = valid(model, valid_loader)
