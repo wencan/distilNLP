@@ -175,10 +175,9 @@ def text_punctuation_normalize(texts):
     return texts
 
 
-def text_normalize(texts_or_text: Union[List[str], str], fix_punctuation_width: bool=True):
+def text_normalize(texts_or_text: Union[List[str], str], enable_punctuation_normalize: bool=True):
     '''Text normalization processing removes redundant characters and corrects incorrect punctuation.
-    If fix_punctuation_width is set to False, punctuation width will not be corrected. 
-    If you are sure that the widths of the punctuations in the text are correct, please set fix_punctuation_width to False.
+    If you are sure that the widths of the punctuations in the text are correct, please set enable_punctuation_normalize to False.
     '''
 
     is_str = False
@@ -191,7 +190,7 @@ def text_normalize(texts_or_text: Union[List[str], str], fix_punctuation_width: 
     texts = [general_normalize(text) for text in texts]
     texts = [remove_unnecessary(text) for text in texts]
 
-    if fix_punctuation_width:
+    if enable_punctuation_normalize:
         texts = text_punctuation_normalize(texts)
 
     if is_str:

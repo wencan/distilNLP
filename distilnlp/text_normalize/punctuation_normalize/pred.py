@@ -4,7 +4,7 @@ import io
 import torch
 
 from .feature import text_to_features_labels, locate_punctuations, default_label
-from .model import BiGRUModule
+from .model import ConvBiGRU
 
 DEVICE = (
     "cuda" if torch.cuda.is_available()
@@ -20,7 +20,7 @@ def punctuation_normalize(model_or_modelfile, texts):
     if isinstance(model_or_modelfile, str) or \
         isinstance(model_or_modelfile, os.PathLike) or \
         isinstance(model_or_modelfile, io.BytesIO):
-        model = BiGRUModule()
+        model = ConvBiGRU()
         model.load_state_dict(torch.load(model_or_modelfile, map_location=torch.device(DEVICE)))
     else:
         model = model_or_modelfile
@@ -45,9 +45,9 @@ def punctuation_normalize(model_or_modelfile, texts):
             feature = features[feature_idx]
             text_index = indexes[feature_idx]
 
-            onehot_idx = torch.argmax(logits[feature_idx])
+            label = torch.argmax(logits[feature_idx])
             try:
-                punctuation = locate_punctuations(feature, onehot_idx)
+                punctuation = locate_punctuations(feature, label)
             except IndexError:
                 pass
             else:
@@ -61,7 +61,7 @@ def punctuation_normalize(model_or_modelfile, texts):
 if __name__ == '__main__':
     import argparse
     arg_parser = argparse.ArgumentParser(description='punctuation normalize.')
-    arg_parser.add_argument('--model_filepath', default='', help='Path to the pre-trained model file.')
+    arg_parser.add_argument('--model_filepath', required=True, help='Path to the pre-trained model file.')
     args = arg_parser.parse_args()
 
     model_filepath = args.model_filepath

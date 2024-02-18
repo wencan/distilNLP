@@ -4,13 +4,10 @@ import multiprocessing
 import queue
 import logging
 import time
-import pickle
 
 
 from .feature import text_to_features_labels
 from distilnlp._utils.data import LMDBWriter
-
-logging.basicConfig(format='%(asctime)s %(processName)s %(filename)s:%(lineno)d %(message)s', level=logging.INFO)
 
 def handle_worker(max_text_length:int, in_queue: multiprocessing.Queue, out_queue: multiprocessing.Queue, eof_event: multiprocessing.Event):
     get_count = 0
@@ -102,6 +99,8 @@ def extra_file(save_path, filepaths, max_lines_per_file=0, max_text_length=1024)
 
 
 if __name__ == '__main__':
+    logging.basicConfig(format='%(asctime)s %(processName)s %(filename)s:%(lineno)d %(message)s', level=logging.INFO)
+    
     arg_parser = argparse.ArgumentParser(description='train punctuation normalize model.')
     arg_parser.add_argument('--file_paths', required=True, help='Paths to the preprocess corpus file. Multiple path are separated by commas.')
     arg_parser.add_argument('--save_path', required=True, help='The save path of preprocessed results.')
