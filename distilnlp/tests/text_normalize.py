@@ -52,8 +52,9 @@ class TextNormalize(TestCase):
     def test_remove_invisible_symbols(self):
         self.assertEqual(text_normalize('This \u202Cis an\u202D English\f sentence.'), 
                                         'This is an English sentence.')
-        # self.assertEqual(text_normalize('🅰️ 插层剥离制备原子薄层材料的机理'), 
-        #                                 '插层剥离制备原子薄层材料的机理')
+        self.assertEqual(text_normalize('雷蒙•勒努瓦'), '雷蒙•勒努瓦')
+        self.assertEqual(text_normalize('🅰️插层剥离制备原子薄层材料的机理.'), # Non-spacing Mark
+                                        '插层剥离制备原子薄层材料的机理。')
     
     def test_remove_excess_symbols(self):
         self.assertEqual(text_normalize('“《联合国纪事》不是官方记录。'), 
@@ -64,6 +65,7 @@ class TextNormalize(TestCase):
                                         'The UN Chronicle is not an official record.')
         self.assertEqual(text_normalize('The UN Chronicle  is not an official record."'), 
                                         'The UN Chronicle is not an official record.')
+
 
 if __name__ == '__main__':
     main()

@@ -4,6 +4,7 @@ from typing import Union, List
 
 from .emoji import EMOJI_DICT
 from distilnlp._utils.modelfile import downloaded_model_filepath
+from distilnlp._utils.unicode import is_mystery_symbol
 from .punctuation_normalize import punctuation_normalize
 
 __all__ = [
@@ -124,9 +125,9 @@ std_replace = partial(_replace, replace_table=std_replace_table)
 
 def general_normalize(text):
     '''basic normalizate for all languages.'''
-    text = map(lambda ch: '' if ch in EMOJI_DICT else ch, text) # remove emoji
+    text = filter(lambda ch: not ch in EMOJI_DICT, text) # remove emoji
     text = map(std_replace, text)
-    text = filter(lambda ch: ch.isprintable() or ch in ('\n', '\t'), text)
+    text = filter(lambda ch: not is_mystery_symbol(ch), text)
     text = ''.join(text)
 
     text = space_pattern.sub(' ', text)
