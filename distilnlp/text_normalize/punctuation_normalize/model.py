@@ -8,13 +8,13 @@ class ConvBiGRU(torch.nn.Module):
     _fa_out_features = 8
     _conv_out_channels = 8
     _pool_input_size = _fa_out_features + _conv_out_channels * 3
-    _dropout_1 = 0.2
+    _dropout_1 = 0.1
     _gru_1_input_size = 8
     _gru_1_hidden_size = 32
-    _dropout_2 = 0.35
+    _dropout_2 = 0.1
     _gru_2_input_size = _gru_1_hidden_size
     _gru_2_hidden_size = 32
-    _dropout_3 = 0.5
+    _dropout_3 = 0.1
     _out_dim = num_labels
 
     def __init__(self):
