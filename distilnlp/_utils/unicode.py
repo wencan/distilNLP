@@ -1,11 +1,11 @@
 import unicodedata
 
-def is_mystery_symbol(ch):
-    if not ch.isprintable() and not ch in ('\n', '\t'):
-        return True
+def is_printable_symbol(ch):
+    if not ch.isprintable():
+        return False
     
     category = unicodedata.category(ch)
     if category in ('Mn', ): # Non-spacing Mark
-        return True
+        return False
     
-    return False
+    return True

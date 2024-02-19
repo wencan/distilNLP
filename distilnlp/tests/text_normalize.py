@@ -11,7 +11,7 @@ class TextNormalize(TestCase):
                                         '测试（一下）')
 
     def test_en(self):
-        self.assertEqual(text_normalize('The project was started in 2007 by David Cournapeau as a Google Summer of Code project， \nand since then many volunteers have contributed.\nSee the About us page for a list of core contributors. '), 
+        self.assertEqual(text_normalize('The project was started in 2007 by David Cournapeau as a Google Summer of Code project， \nand since then many volunteers have contributed. \nSee the About us page for a list of core contributors. '), 
                                         'The project was started in 2007 by David Cournapeau as a Google Summer of Code project, and since then many volunteers have contributed. See the About us page for a list of core contributors.')
 
         self.assertEqual(text_normalize('How are you?”'), 
