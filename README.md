@@ -1,7 +1,11 @@
 # distilNLP
-本项目的目的是提供一套开箱即用、低依赖、高性能、解决实际问题能取得良好效果的自然语言处理工具箱。现阶段，本项目仅限学习和研究使用。
+本项目的目的是提供一套开箱即用、低依赖、高性能、解决实际问题能取得良好效果的自然语言处理工具箱。  
+不同于其它NLP项目采用经典机器学习技术，或者基于大规模预训练模型去微调，本项目采用深度学习技术，从头设计一系列小型语言模型，以期取得较高推理准确率和最低资源消耗。  
+现阶段，本项目仅限学习和研究使用。
 
-The purpose of this project is to provide a set of out of the box, low-dependency, high-performance natural language processing toolkits that can achieve good results in solving real-world problems. At this stage, this project is only for learning and research.
+The purpose of this project is to provide a set of out of the box, low-dependency, high-performance natural language processing toolkits that can achieve good results in solving real-world problems.  
+Unlike other NLP projects that use classical machine learning techniques or fine-tune based on large-scale pre-trained models, this project uses deep learning techniques to design a series of small language models from scratch, aiming to achieve high inference accuracy and minimal resource consumption.  
+At this stage, this project is only for learning and research.
 
 # Usage
 
@@ -11,7 +15,7 @@ The purpose of this project is to provide a set of out of the box, low-dependenc
 文本正规化包含标点符号正规化模型。该模型在测试语料的准确率为98.8%。但有些文本的标点符号准确率更高。请考虑将enable_punctuation_normalize参数置为False，以禁用标点符号正规化。
 
 Text normalization processing removes redundant characters and corrects incorrect punctuation.  
-Text normalization includes a punctuation normalization model. This model has an accuracy of 98.8% on the test corpus. However, some texts may have higher punctuation accuracy. Consider setting the enable_punctuation_normalize parameter to False to disable punctuation normalization.
+Text normalization includes a punctuation normalization model. This model has an accuracy of 98.8% on the test corpus. However, some texts may have higher punctuation accuracy. Please consider setting the enable_punctuation_normalize parameter to False to disable punctuation normalization.
 ```python
 from distilnlp import text_normalize
 
