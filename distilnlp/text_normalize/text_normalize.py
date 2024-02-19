@@ -167,8 +167,8 @@ def remove_unnecessary(text):
 
 def text_punctuation_normalize(texts):
     model_name = 'punctuation_normalize'
-    model_version = '20240207002857'
-    url = 'https://raw.githubusercontent.com/wencan/distilNLP/4d2b836c50ba05e1913912b27f0b1a9cdef9a503/assets/model/punctuation_normalize/state_dict_20240207002857.pt'
+    model_version = '20240218211723'
+    url = 'https://raw.githubusercontent.com/wencan/distilNLP/150add0adb22af560591df5674101ac8ba3fe324/assets/model/punctuation_normalize/state_dict_20240218211723.pt'
     filepath = downloaded_model_filepath(model_name, model_version, url)
 
     texts = punctuation_normalize(filepath, texts)
