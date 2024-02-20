@@ -5,7 +5,7 @@ def is_printable_symbol(ch):
         return False
     
     category = unicodedata.category(ch)
-    if category in ('Mn', ): # Non-spacing Mark
+    if category in ('Mn', 'Co'): # Non-spacing Mark, Private Use
         return False
     
     return True
