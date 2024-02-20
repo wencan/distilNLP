@@ -47,6 +47,7 @@ class LMDBWriter(torch.utils.data.Dataset):
 
     def close(self):
         if self._db:
+            self._db.sync()
             self._db.close()
             self._db = None
 

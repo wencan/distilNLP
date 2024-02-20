@@ -24,7 +24,7 @@ if __name__ == '__main__':
     segmented_file_paths = args.segmented_file_paths.split(',')
     save_path = args.save_path
 
-    with LMDBWriter(save_path, sync=True) as writer:
+    with LMDBWriter(save_path, sync=False) as writer:
         for text_filepath in text_filepaths:
             short_set = set()
 
