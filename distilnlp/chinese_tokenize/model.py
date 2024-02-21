@@ -7,11 +7,12 @@ import torchtext
 from distilnlp._thirdparty.tcn import TemporalConvNet
 from distilnlp._utils.residual import GatedResidualBlock
 
-from .feature import num_labels
+from .feature import num_labels, label_pad
 
 
 def new_attention(implementation: Literal['local-attention', 'natten'],
                   dim, num_heads, window_size):
+    '''local attention or windowed attention'''
     if implementation == 'natten':
         # https://shi-labs.com/natten/
         # https://github.com/SHI-Labs/NATTEN
@@ -22,7 +23,7 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
     elif implementation == 'local-attention':
         # https://github.com/lucidrains/local-attention
         from distilnlp._thirdparty.local_attention import LocalAttention
-        
+
         class MultiHeadLocalAttention(torch.nn.Module):
             def __init__(self, dim, num_heads, window_size, **kwargs):
                 super(MultiHeadLocalAttention, self).__init__()
@@ -49,14 +50,13 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
         raise ValueError(f'invalid implementation: {implementation}')
     
     return attention
-    
 
 class AttentionTCN(torch.nn.Module):    
     _attention_num_heads = 8
-    _attention_output_dim = _attention_num_heads * 16
+    _attention_dim = _attention_num_heads * 16
     _attention_dropout = 0.1
 
-    _tcn_input_size = _attention_output_dim
+    _tcn_input_size = _attention_dim
     _tcn_output_size = 128
     _tcn_num_channels = [_tcn_input_size, 128, 128, _tcn_output_size]
     _tcn_kernel_size = 2
@@ -72,15 +72,17 @@ class AttentionTCN(torch.nn.Module):
                  pad_idx:int,
                  ):
         super(AttentionTCN, self).__init__()
-        self.embedding =  torch.nn.Embedding.from_pretrained(embedding_weight, padding_idx=pad_idx, max_norm=True)
+
+        # the tensor does not get updated in the learning process.
+        self.embedding =  torch.nn.Embedding.from_pretrained(embedding_weight, freeze=True, padding_idx=pad_idx, max_norm=True)
 
         self.attention = new_attention(attention_implementation, 
                                        dim=self.embedding.embedding_dim, 
                                        num_heads=self._attention_num_heads, 
                                        window_size=attention_window_size,
                                       )
-        self.attention_res_block = GatedResidualBlock('max', self._attention_output_dim)
-        self.attention_layer_norm = torch.nn.LayerNorm(self._attention_output_dim)
+        self.attention_res_block = GatedResidualBlock('max', self._attention_dim)
+        self.attention_layer_norm = torch.nn.LayerNorm(self._attention_dim)
         self.attention_gelu = torch.nn.GELU()
         self.attention_dropout = torch.nn.Dropout(self._attention_dropout)
 
@@ -122,19 +124,18 @@ class Codec:
                  vocab:torchtext.vocab.Vocab, 
                  attention_window_size:int, 
                  feature_pad_value:int=0,
-                 label_pad_value:int=0,
                  ):
         self.vocab = vocab
         self.attention_window_size = attention_window_size
         self.feature_pad_value = feature_pad_value
-        self.label_pad_value = label_pad_value
+        self.label_pad_value = label_pad
     
     def Encode(self, texts:Sequence[str], 
                labels_seqs:Optional[Sequence[str]]=None, 
                device:Union[str, torch.device, int]=None,
                ) -> Tuple[torch.tensor, Optional[torch.tensor], Sequence[int]]:
-        lengths = [len(text) for text in texts]
-        max_length = max(lengths)
+        lengths = torch.tensor([len(text) for text in texts])
+        max_length = torch.max(lengths)
 
         # sequence length must be divisible by window size for local attention
         if max_length % self.attention_window_size != 0:
@@ -220,12 +221,12 @@ if __name__ == '__main__':
         embedding_weight = torch.load(infile)
     embedding_weight = embedding_weight.type(torch.get_default_dtype())
 
-    codec = Codec(vocab, attention_window_size, 0, 0)
+    codec = Codec(vocab, attention_window_size)
     model = AttentionTCN('local-attention', attention_window_size, embedding_weight, padding_index)
     print(model)
     for name, p in model.named_parameters():
         print(f'{name} parameters: {p.numel()}')
-    print(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
+    print(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}\n')
     # test
     inputs = ['6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。', 
               'An implementation of local windowed attention for language modeling', 

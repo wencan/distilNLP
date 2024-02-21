@@ -1,8 +1,8 @@
 
 from distilnlp._utils.unicode import is_printable_symbol
 
-num_labels = 3
-
+num_labels = 2
+label_pad = -1
 label_head = 0
 label_single = label_head
 label_middle = 1
