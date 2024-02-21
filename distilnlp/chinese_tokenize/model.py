@@ -31,7 +31,7 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
                 self.num_heads = num_heads
                 self.dim_head = dim // num_heads
                 
-                self.qkv = torch.nn.Linear(dim, self.dim_head*num_heads*3)
+                self.qkv = torch.nn.Linear(dim, dim*3)
                 self.attention = LocalAttention(dim=self.dim_head, window_size=window_size, **kwargs)
             
             def forward(self, x, **kwargs): # (batch_size, max_length, dim) -> (batch_size, max_length, dim) 
@@ -54,12 +54,10 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
 
 class AttentionTCN(torch.nn.Module):    
     _attention_num_heads = 8
-    _attention_dim = _attention_num_heads * 16
     _attention_dropout = 0.1
 
-    _tcn_input_size = _attention_dim
     _tcn_output_size = 128
-    _tcn_num_channels = [_tcn_input_size, 128, 128, _tcn_output_size]
+    _tcn_num_channels = [128, 128, 128, _tcn_output_size]
     _tcn_kernel_size = 2
     _tcn_dropout = 0.1
 
@@ -77,17 +75,17 @@ class AttentionTCN(torch.nn.Module):
         # the tensor does not get updated in the learning process.
         self.embedding =  torch.nn.Embedding.from_pretrained(embedding_weight, freeze=True, padding_idx=pad_idx, max_norm=True)
 
+        self._attention_dim = self.embedding.embedding_dim
         self.attention = new_attention(attention_implementation, 
-                                       dim=self.embedding.embedding_dim, 
+                                       dim=self._attention_dim, 
                                        num_heads=self._attention_num_heads, 
                                        window_size=attention_window_size,
                                       )
-        self.attention_res_block = GatedResidualBlock('max', self._attention_dim)
         self.attention_layer_norm = torch.nn.LayerNorm(self._attention_dim)
         self.attention_gelu = torch.nn.GELU()
         self.attention_dropout = torch.nn.Dropout(self._attention_dropout)
 
-        self.tcn = TemporalConvNet(self._tcn_input_size, self._tcn_num_channels, self._tcn_kernel_size, self._tcn_dropout)
+        self.tcn = TemporalConvNet(self._attention_dim, self._tcn_num_channels, self._tcn_kernel_size, self._tcn_dropout)
         self.tcn_res_block = GatedResidualBlock('avg', self._tcn_output_size)
         self.tcn_layer_norm = torch.nn.LayerNorm(self._tcn_output_size)
         self.tcn_gelu = torch.nn.GELU()
@@ -97,10 +95,8 @@ class AttentionTCN(torch.nn.Module):
 
     def forward(self, features_seqs):
         out = self.embedding(features_seqs)
-        embed_out = out.clone()
 
         out = self.attention(out)
-        out = self.attention_res_block(embed_out, out)
         out = self.attention_layer_norm(out)
         out = self.attention_gelu(out)
         out = self.attention_dropout(out)
@@ -161,9 +157,6 @@ class Codec:
         if labels_seqs:
             return features_seqs, targets_seqs, lengths
         return features_seqs, lengths
-    
-    def Decode(self, features_seqs:torch.tensor, targets_seqs:torch.tensor, lengths:Sequence[int]=None):
-        pass
 
 
 class Tokenizer(torch.nn.Module, Codec):

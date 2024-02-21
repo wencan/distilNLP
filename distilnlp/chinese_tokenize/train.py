@@ -51,13 +51,13 @@ def train(model:AttentionTCN,
         t1 = time.time()
 
         optimizer.zero_grad()
-        outputs = model(features_seqs) # -> (batch_size, max_length, num_labels)
+        logits_seqs = model(features_seqs) # -> (batch_size, max_length, num_labels)
 
         t2 = time.time()
         forward_seconds += t2 - t1
 
         # loss
-        weights = torch.transpose(outputs, 1, 2) # -> (batch_size, num_labels, max_length)
+        weights = torch.transpose(logits_seqs, 1, 2) # -> (batch_size, num_labels, max_length)
         loss = loss_fn(weights, targets_seqs)
         losses.append(loss.item())
         
@@ -71,13 +71,13 @@ def train(model:AttentionTCN,
         backward_seconds += t4 - t3
 
         # accuracy
-        argmaxs = torch.argmax(outputs, dim=2)
+        indices_seqs = torch.argmax(logits_seqs, dim=2)
         mask = targets_seqs != label_pad
-        acc = torch.sum((argmaxs == targets_seqs) & mask)
+        acc = torch.sum((indices_seqs == targets_seqs) & mask)
         total_acc += acc
 
         total += torch.sum(lengths)
-    
+
     return sum(losses)/len(losses), total_acc/total, forward_seconds, check_seconds, backward_seconds
 
 
@@ -99,13 +99,13 @@ def valid(model:AttentionTCN,
 
             t1 = time.time()
 
-            outputs = model(features_seqs) # -> (batch_size, max_length, num_labels)
+            logits_seqs = model(features_seqs) # -> (batch_size, max_length, num_labels)
 
             t2 = time.time()
             forward_seconds += t2 - t1
 
             # loss
-            weights = torch.transpose(outputs, 1, 2) # -> (batch_size, num_labels, max_length)
+            weights = torch.transpose(logits_seqs, 1, 2) # -> (batch_size, num_labels, max_length)
             loss = loss_fn(weights, targets_seqs)
             losses.append(loss.item())
             
@@ -113,9 +113,9 @@ def valid(model:AttentionTCN,
             check_seconds += t3 -t2
 
             # accuracy
-            argmaxs = torch.argmax(outputs, dim=2)
+            indices_seqs = torch.argmax(logits_seqs, dim=2)
             mask = targets_seqs != label_pad
-            acc = torch.sum((argmaxs == targets_seqs) & mask)
+            acc = torch.sum((indices_seqs == targets_seqs) & mask)
             total_acc += acc
 
             total += torch.sum(lengths)
@@ -146,11 +146,11 @@ def cross_train_valid(model:AttentionTCN,
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
         train_loss, train_acc, forward_seconds, check_seconds, backward_seconds = train(model, codec, train_loader, optimizer)
-        log(f'Epoch {epoch+1} train loss: {train_loss:.8f}, train accuracy: {train_acc:.8f} '\
+        log(f'Epoch {epoch+1} train loss: {train_loss:.8f}, train accuracy: {train_acc:.8f}, '\
             f'forward propagation: {forward_seconds}s, check loss: {int(check_seconds)}s, backward propagation: {int(backward_seconds)}s')
         
         valid_loss, valid_acc, forward_seconds, check_seconds = valid(model, codec, valid_loader)
-        log(f'Epoch {epoch+1} valid loss: {valid_loss:.8f}, valid accuracy: {valid_acc:.8f} '\
+        log(f'Epoch {epoch+1} valid loss: {valid_loss:.8f}, valid accuracy: {valid_acc:.8f}, '\
             f'forward propagation: {forward_seconds}s, check loss: {int(check_seconds)}s')
 
         latest_model_state = model.state_dict()
