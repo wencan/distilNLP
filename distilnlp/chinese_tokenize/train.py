@@ -10,6 +10,7 @@ import torch
 import torch.utils.data
 
 from distilnlp._utils.data import LMDBDataSet
+from distilnlp._utils.profile import profile_trace
 
 from .feature import label_pad
 from .model import AttentionTCN, Codec
@@ -41,34 +42,22 @@ def train(model:AttentionTCN,
 
     total, total_acc = 0, 0
     losses = []
-    forward_seconds, check_seconds, backward_seconds = 0, 0, 0
 
     model.train()
 
     for texts, labels_seqs in tqdm.tqdm(loader):
         features_seqs, targets_seqs, lengths = codec.Encode(texts, labels_seqs, device=DEVICE)
 
-        t1 = time.time()
-
         optimizer.zero_grad()
         logits_seqs = model(features_seqs) # -> (batch_size, max_length, num_labels)
-
-        t2 = time.time()
-        forward_seconds += t2 - t1
 
         # loss
         weights = torch.transpose(logits_seqs, 1, 2) # -> (batch_size, num_labels, max_length)
         loss = loss_fn(weights, targets_seqs)
         losses.append(loss.item())
-        
-        t3 = time.time()
-        check_seconds += t3 -t2
 
         loss.backward()
         optimizer.step()
-
-        t4 = time.time()
-        backward_seconds += t4 - t3
 
         # accuracy
         indices_seqs = torch.argmax(logits_seqs, dim=2)
@@ -78,7 +67,7 @@ def train(model:AttentionTCN,
 
         total += torch.sum(lengths)
 
-    return sum(losses)/len(losses), total_acc/total, forward_seconds, check_seconds, backward_seconds
+    return sum(losses)/len(losses), total_acc/total
 
 
 def valid(model:AttentionTCN, 
@@ -90,27 +79,18 @@ def valid(model:AttentionTCN,
 
     total, total_acc = 0, 0
     losses = []
-    forward_seconds, check_seconds = 0, 0
 
     model.eval()
     with torch.no_grad():
         for texts, labels_seqs in tqdm.tqdm(loader):
             features_seqs, targets_seqs, lengths = codec.Encode(texts, labels_seqs, device=DEVICE)
 
-            t1 = time.time()
-
             logits_seqs = model(features_seqs) # -> (batch_size, max_length, num_labels)
-
-            t2 = time.time()
-            forward_seconds += t2 - t1
 
             # loss
             weights = torch.transpose(logits_seqs, 1, 2) # -> (batch_size, num_labels, max_length)
             loss = loss_fn(weights, targets_seqs)
             losses.append(loss.item())
-            
-            t3 = time.time()
-            check_seconds += t3 -t2
 
             # accuracy
             indices_seqs = torch.argmax(logits_seqs, dim=2)
@@ -120,7 +100,12 @@ def valid(model:AttentionTCN,
 
             total += torch.sum(lengths)
     
-    return sum(losses)/len(losses), total_acc/total, forward_seconds, check_seconds
+    return sum(losses)/len(losses), total_acc/total
+
+
+train_with_profile = profile_trace(train, print_fn=log)
+valid_with_profile = profile_trace(valid, print_fn=log)
+
 
 def cross_train_valid(model:AttentionTCN,
                       codec:Codec, 
@@ -145,13 +130,17 @@ def cross_train_valid(model:AttentionTCN,
         train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=True, collate_fn=collate_batch)
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
-        train_loss, train_acc, forward_seconds, check_seconds, backward_seconds = train(model, codec, train_loader, optimizer)
-        log(f'Epoch {epoch+1} train loss: {train_loss:.8f}, train accuracy: {train_acc:.8f}, '\
-            f'forward propagation: {forward_seconds}s, check loss: {int(check_seconds)}s, backward propagation: {int(backward_seconds)}s')
+        if epoch == 0:
+            train_loss, train_acc = train_with_profile(model, codec, train_loader, optimizer)
+        else:
+            train_loss, train_acc = train(model, codec, train_loader, optimizer)
+        log(f'Epoch {epoch+1} train loss: {train_loss:.8f}, train accuracy: {train_acc:.8f}')
         
-        valid_loss, valid_acc, forward_seconds, check_seconds = valid(model, codec, valid_loader)
-        log(f'Epoch {epoch+1} valid loss: {valid_loss:.8f}, valid accuracy: {valid_acc:.8f}, '\
-            f'forward propagation: {forward_seconds}s, check loss: {int(check_seconds)}s')
+        if epoch == 0:
+            valid_loss, valid_acc = valid_with_profile(model, codec, valid_loader)
+        else:
+            valid_loss, valid_acc = valid(model, codec, valid_loader)
+        log(f'Epoch {epoch+1} valid loss: {valid_loss:.8f}, valid accuracy: {valid_acc:.8f}')
 
         latest_model_state = model.state_dict()
         
@@ -163,7 +152,7 @@ def cross_train_valid(model:AttentionTCN,
         txt_filepath = os.path.join(save_filedir, f'chinese_tokenize_state_dict_{version}.txt')
         with open(txt_filepath, 'w') as outfile:
             outfile.write(str(model)+'\n')
-            # outfile.write(f'valid accuracy: {acc_valid:.6f} valid loss: {loss_valid:.6f}')
+            outfile.write(f'valid accuracy: {valid_acc:.6f} valid loss: {valid_loss:.6f}')
 
         if lowest_loss_train is None or lowest_loss_train > train_loss:
             # best state
