@@ -1,5 +1,5 @@
 import collections
-from typing import Literal, Union, Sequence
+from typing import Literal, Union, Sequence, Optional, Tuple
 
 import torch
 import torchtext
@@ -26,7 +26,7 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
         class MultiHeadLocalAttention(torch.nn.Module):
             def __init__(self, dim, num_heads, window_size, **kwargs):
                 super(MultiHeadLocalAttention, self).__init__()
-                self.heads = num_heads
+                self.num_heads = num_heads
                 self.dim_head = dim // num_heads
                 
                 self.qkv = torch.nn.Linear(dim, self.dim_head*num_heads*3)
@@ -37,10 +37,11 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
                 max_length = x.size(1)
 
                 q, k, v = self.qkv(x).chunk(3, dim=-1) # -> (batch_size, max_length, dim_head*heads), ..., ...
-                q, k, v = map(lambda t: t.view(batch_size, max_length, self.heads, -1).transpose(1, 2), (q, k, v)) # -> (batch_size, heads, max_length, dim_head), ..., ...
+                q, k, v = map(lambda t: t.view(batch_size, max_length, self.num_heads, -1).transpose(1, 2), (q, k, v)) # -> (batch_size, heads, max_length, dim_head), ..., ...
 
                 out = self.attention(q, k, v, **kwargs) # -> (batch_size, heads, max_length, dim_head) 
                 out = out.transpose(1, 2).reshape(batch_size, max_length, -1) # -> (batch_size, max_length, dim_head*heads) 
+
                 return out
             
         attention = MultiHeadLocalAttention(dim=dim, num_heads=num_heads, window_size=window_size)
@@ -51,7 +52,6 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
     
 
 class AttentionTCN(torch.nn.Module):    
-    _attention_window_size = 3
     _attention_num_heads = 8
     _attention_output_dim = _attention_num_heads * 16
     _attention_dropout = 0.1
@@ -67,25 +67,17 @@ class AttentionTCN(torch.nn.Module):
 
     def __init__(self, 
                  attention_implementation: Literal['local-attention', 'natten'],
-                 vocab: Union[torchtext.vocab.Vocab, str], 
-                 pad_idx:int,
-                 unk_idx:int,
+                 attention_window_size:int,
                  embedding_weight:torch.tensor,
+                 pad_idx:int,
                  ):
         super(AttentionTCN, self).__init__()
-        self.pad_idx = pad_idx
-
-        if isinstance(vocab, torchtext.vocab.Vocab):
-            self.vocab = vocab
-        elif isinstance(vocab, collections.OrderedDict):
-            self.vocab = torchtext.vocab.vocab(vocab)
-        self.vocab.set_default_index(unk_idx)
         self.embedding =  torch.nn.Embedding.from_pretrained(embedding_weight, padding_idx=pad_idx, max_norm=True)
 
         self.attention = new_attention(attention_implementation, 
                                        dim=self.embedding.embedding_dim, 
                                        num_heads=self._attention_num_heads, 
-                                       window_size=self._attention_window_size
+                                       window_size=attention_window_size,
                                       )
         self.attention_res_block = GatedResidualBlock('max', self._attention_output_dim)
         self.attention_layer_norm = torch.nn.LayerNorm(self._attention_output_dim)
@@ -122,28 +114,86 @@ class AttentionTCN(torch.nn.Module):
         out = self.fc(out)
 
         return out
+
+
+class Codec:
+    '''encode and decode'''
+    def __init__(self, 
+                 vocab:torchtext.vocab.Vocab, 
+                 attention_window_size:int, 
+                 feature_pad_value:int=0,
+                 label_pad_value:int=0,
+                 ):
+        self.vocab = vocab
+        self.attention_window_size = attention_window_size
+        self.feature_pad_value = feature_pad_value
+        self.label_pad_value = label_pad_value
     
-    def encode(self, texts:Union[str, Sequence[str]]):
-        if isinstance(texts, str):
-            texts = [texts]
+    def Encode(self, texts:Sequence[str], 
+               labels_seqs:Optional[Sequence[str]]=None, 
+               device:Union[str, torch.device, int]=None,
+               ) -> Tuple[torch.tensor, Optional[torch.tensor], Sequence[int]]:
         lengths = [len(text) for text in texts]
         max_length = max(lengths)
 
         # sequence length must be divisible by window size for local attention
-        if max_length % self._attention_window_size != 0:
-            max_length = (max_length // self._attention_window_size + 1) * self._attention_window_size
+        if max_length % self.attention_window_size != 0:
+            padded_length = (max_length // self.attention_window_size + 1) * self.attention_window_size
+        else:
+            padded_length = max_length
 
         features_seqs = []
-        for text in texts:
-            features = [self.vocab[ch] for ch in text]
+        targets_seq = []
+        for idx, text in enumerate(texts):
+            features = torch.tensor([self.vocab[ch] for ch in text], device=device)
+            if labels_seqs:
+                targets = torch.tensor(labels_seqs[idx], device=device)
+        
             length = len(features)
-            if length < max_length:
-                features += [self.pad_idx] * (max_length - length)
-            features_seqs.append(features)
-        features_seqs = torch.tensor(features_seqs)
+            if length < padded_length:
+                pad_length = padded_length - length
+                features = torch.nn.functional.pad(features, (0, pad_length), value=self.feature_pad_value)
+                if labels_seqs:
+                    targets = torch.nn.functional.pad(targets, (0, pad_length), value=self.label_pad_value)
 
-        outputs = self.forward(features_seqs)
-        return outputs
+            features_seqs.append(features)
+            if labels_seqs:
+                targets_seq.append(targets)
+
+        features_seqs = torch.stack(features_seqs)
+        if targets_seq:
+            targets_seq = torch.stack(targets_seq)
+            return features_seqs, targets_seq, lengths
+        return features_seqs, lengths
+    
+    def Decode(self, features_seqs:torch.tensor, targets_seqs:torch.tensor, lengths:Sequence[int]=None):
+        pass
+
+
+class Tokenizer(torch.nn.Module, Codec):
+    def __init__(self, 
+                 attention_implementation: Literal['local-attention', 'natten'],
+                 attention_window_size:int,
+                 vocab: torchtext.vocab.Vocab, 
+                 embedding_weight:torch.tensor,
+                 feature_pad_value=0,
+                 label_pad_value:int=0,
+                 ):
+        torch.nn.Module.__init__(self)
+        Codec.__init__(self, vocab, attention_window_size, feature_pad_value, label_pad_value)
+
+        self.model = AttentionTCN(attention_implementation, 
+                                  attention_window_size, 
+                                  embedding_weight,
+                                  label_pad_value,
+                                  )
+    
+    def forward(self, texts:Sequence[str]):
+        features_seqs, _ = self.Encode(texts)
+
+        out = self.model(features_seqs)
+
+        # return features_seqs, lengths, paded_length
 
 
 if __name__ == '__main__':
@@ -152,24 +202,26 @@ if __name__ == '__main__':
 
     arg_parser = argparse.ArgumentParser(description='Inspect the model.')
     arg_parser.add_argument('--vocab_filepath', help='Path to vocab dict.')
+    arg_parser.add_argument('--embedding_filepath', help='Path to embedding weight file.')
     arg_parser.add_argument('--padding_index', type=int, default=0, help='Index of padding token.')
     arg_parser.add_argument('--unknown_index', type=int, default=1, help='Index of unknown token.')
-    arg_parser.add_argument('--embedding_filepath', help='Path to embedding weight file.')
     args = arg_parser.parse_args()
 
     vocab_filepath = args.vocab_filepath
     padding_index = args.padding_index
     unknown_index = args.unknown_index
     embedding_filepath = args.embedding_filepath
+    attention_window_size = 3
 
-    vocab = load_vocab(vocab_filepath)
+    vocab = load_vocab(vocab_filepath, unknown_index)
     print(f'vocab size: {len(vocab)}')
 
     with open(embedding_filepath, 'rb') as infile:
         embedding_weight = torch.load(infile)
     embedding_weight = embedding_weight.type(torch.get_default_dtype())
 
-    model = AttentionTCN('local-attention', vocab, padding_index, unknown_index, embedding_weight)
+    codec = Codec(vocab, attention_window_size, 0, 0)
+    model = AttentionTCN('local-attention', attention_window_size, embedding_weight, padding_index)
     print(model)
     for name, p in model.named_parameters():
         print(f'{name} parameters: {p.numel()}')
@@ -179,12 +231,13 @@ if __name__ == '__main__':
               'An implementation of local windowed attention for language modeling', 
               '朝散大夫右諫議大夫權御史中丞充理檢使上護軍賜紫金魚袋臣司馬光奉敕編集'
               ]
-    outputs = model.encode(inputs)
+    inputs, _ = codec.Encode(inputs)
+    outputs = model(inputs)
 
-    model = AttentionTCN('natten', vocab, padding_index, unknown_index, embedding_weight)
+    model = AttentionTCN('natten', attention_window_size, embedding_weight, padding_index)
     print(model)
     for name, p in model.named_parameters():
         print(f'{name} parameters: {p.numel()}')
     print(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
     # test
-    outputs = model.encode(inputs)
+    outputs = model(inputs)

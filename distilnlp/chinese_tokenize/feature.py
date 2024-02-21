@@ -3,10 +3,9 @@ from distilnlp._utils.unicode import is_printable_symbol
 
 num_labels = 3
 
-label_default = 0   # pad
-label_head = 1
+label_head = 0
 label_single = label_head
-label_middle = 2
+label_middle = 1
 label_tail = label_middle
 label_ignore = label_head
 
@@ -39,7 +38,7 @@ def text_to_features_labels(text, segments):
                 break
             
             feature = text[text_idx]
-            label = label_default
+            label = label_head
             if idx == 0:
                 if segment_length == 1:
                     label = label_single

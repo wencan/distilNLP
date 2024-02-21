@@ -2,7 +2,7 @@ import unicodedata
 import collections
 import argparse
 import pickle
-from typing import Union
+from typing import Union, Optional
 
 import torchtext
 import tqdm
@@ -22,11 +22,14 @@ def save_vocab(stoi_filepath:str, vocab: Union[torchtext.vocab.Vocab, collection
         outfile.write('\n'.join(stoi.keys()))
 
 
-def load_vocab(stoi_filepath:str) -> torchtext.vocab.Vocab:
+def load_vocab(stoi_filepath:str, default_idx:Optional[int]=None) -> torchtext.vocab.Vocab:
     with open(stoi_filepath, 'r') as infile:
         data = infile.read()
         stoi = collections.OrderedDict([(s, i//2) for i, s in enumerate(data) if i%2==0])
     vocab = torchtext.vocab.vocab(stoi)
+
+    if not default_idx is None:
+        vocab.set_default_index(default_idx)
 
     return vocab
 

@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 
-from distilnlp.chinese_tokenize.feature import label_default, label_single, label_head, label_middle, label_tail, label_ignore, text_to_features_labels
+from distilnlp.chinese_tokenize.feature import label_single, label_head, label_middle, label_tail, label_ignore, text_to_features_labels
 
 class TestFeature(TestCase):
     def test_segmented_mix_to_features_labels(self):
