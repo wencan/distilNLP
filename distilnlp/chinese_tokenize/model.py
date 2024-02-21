@@ -3,6 +3,7 @@ from typing import Literal, Union, Sequence, Optional, Tuple
 
 import torch
 import torchtext
+import torch.utils
 
 from distilnlp._thirdparty.tcn import TemporalConvNet
 from distilnlp._utils.residual import GatedResidualBlock
@@ -142,29 +143,23 @@ class Codec:
             padded_length = (max_length // self.attention_window_size + 1) * self.attention_window_size
         else:
             padded_length = max_length
+        pad_length = padded_length - max_length
 
         features_seqs = []
-        targets_seq = []
-        for idx, text in enumerate(texts):
-            features = torch.tensor([self.vocab[ch] for ch in text], device=device)
-            if labels_seqs:
-                targets = torch.tensor(labels_seqs[idx], device=device)
-        
-            length = len(features)
-            if length < padded_length:
-                pad_length = padded_length - length
-                features = torch.nn.functional.pad(features, (0, pad_length), value=self.feature_pad_value)
-                if labels_seqs:
-                    targets = torch.nn.functional.pad(targets, (0, pad_length), value=self.label_pad_value)
+        targets_seqs = []
+        features_seqs = [torch.tensor([self.vocab[ch] for ch in text], device=device) for text in texts]
+        features_seqs = torch.nn.utils.rnn.pad_sequence(features_seqs, batch_first=True, padding_value=self.feature_pad_value)
+        if pad_length:
+            features_seqs = torch.nn.functional.pad(features_seqs, (0, pad_length), value=self.feature_pad_value)
 
-            features_seqs.append(features)
-            if labels_seqs:
-                targets_seq.append(targets)
+        if labels_seqs:
+            targets_seqs = [torch.tensor(labels, device=device) for labels in labels_seqs]
+            targets_seqs = torch.nn.utils.rnn.pad_sequence(targets_seqs, batch_first=True, padding_value=self.label_pad_value)
+            if pad_length:
+                targets_seqs = torch.nn.functional.pad(targets_seqs, (0, pad_length), value=self.label_pad_value)
 
-        features_seqs = torch.stack(features_seqs)
-        if targets_seq:
-            targets_seq = torch.stack(targets_seq)
-            return features_seqs, targets_seq, lengths
+        if labels_seqs:
+            return features_seqs, targets_seqs, lengths
         return features_seqs, lengths
     
     def Decode(self, features_seqs:torch.tensor, targets_seqs:torch.tensor, lengths:Sequence[int]=None):
