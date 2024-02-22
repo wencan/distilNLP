@@ -1,5 +1,5 @@
 
-from distilnlp._utils.unicode import is_printable_symbol
+from distilnlp._utils.unicode import is_printable_symbol, space_separators
 
 num_labels = 2
 label_pad = -1
@@ -16,9 +16,9 @@ def text_to_features_labels(text, segments):
     text_idx = 0
     segments_idx = 0
     while text_idx < len(text) and segments_idx < len(segments):
-        if text[text_idx] == ' ' and segments[segments_idx] != ' ':
+        if text[text_idx] in space_separators  and segments[segments_idx] != ' ':
             # ignore/skip
-            features.append(' ')
+            features.append(text[text_idx])
             labels.append(label_ignore)
             text_idx += 1
             continue

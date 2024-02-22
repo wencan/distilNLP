@@ -23,5 +23,11 @@ class TestFeature(TestCase):
         expect_labels = [label_head, label_tail]
         self.assertEqual(text_to_features_labels(text, segments), (expect_features, expect_labels))
 
+        text = '第二條　   中華民國之主權屬於國民全體。'
+        segments = ['第二', '條', '中華', '民國', '之', '主權', '屬於', '國民', '全體', '。']
+        expect_features = list(text)
+        expect_labels = [label_head, label_tail, label_head, label_ignore, label_ignore, label_ignore, label_ignore, label_head, label_tail, label_head, label_tail, label_single, label_head, label_tail, label_head, label_tail, label_head, label_tail, label_head, label_tail, label_single]
+        self.assertEqual(text_to_features_labels(text, segments), (expect_features, expect_labels))
+
 if __name__ == '__main__':
     main()
