@@ -19,11 +19,13 @@ if __name__ == '__main__':
     arg_parser.add_argument('--segmented_file_paths', required=True, help='Paths to the segmented corpus file. Multiple path are separated by commas.')
     arg_parser.add_argument('--save_path', required=True, help='The save path of preprocessed results.')
     arg_parser.add_argument('--max_length', type=int, default=512, help='The maximum length of the text. Text exceeding this length will be discarded.')
+    arg_parser.add_argument('--min_length', type=int, default=0, help='The minimum length of the text. Text exceeding this length will be discarded.')
     args = arg_parser.parse_args()
 
     text_filepaths = args.text_file_paths.split(',')
     segmented_file_paths = args.segmented_file_paths.split(',')
     max_length = args.max_length
+    min_length = args.min_length
     save_path = args.save_path
 
     with LMDBWriter(save_path, sync=False) as writer:
@@ -41,25 +43,46 @@ if __name__ == '__main__':
                 log(f'No segmented file found for text file {text_filename}')
                 continue
 
+            log(f'{text_filepath} -- {segmented_filepath}')
+
+            line_no =0
             with open(text_filepath) as textfile:
                 with open(segmented_filepath) as segmentedfile:
                     for text in textfile:
+                        line_no +=1
                         line = segmentedfile.readline()
-
-                        text = text.strip()
-                        if len(text) > max_length:
+                        length = len(text)
+                        if length == 0:
                             continue
-                        if len(text) < 30:
+
+                        if length >= max_length:
+                            continue
+                        if length < min_length:
+                            continue
+
+                        if length < 30:
                             if text in short_set:
                                 continue
                             short_set.add(text)
 
-                        segments = json.loads(line)
-                        features, labels = text_to_features_labels(text, segments)
+                        try:
+                            segments = json.loads(line)
+                        except json.decoder.JSONDecodeError as e:
+                            raise ValueError(f'cannot load json [{line}], line no: {line_no}, text: [{text}]') from e
+
+                        if len(segments) > length*9//10:
+                            # low quality
+                            continue
+
+                        try:
+                            features, labels = text_to_features_labels(text, segments)
+                        except ValueError as e:
+                            log(f'skip line no: [{line_no}], text: [{text}], segments: [{segments}], exception: {e}')
+                            continue
                         writer.add((features, labels))
         total = len(writer)
     
     with open(os.path.join(save_path, 'total.txt'), 'w') as outfile:
         outfile.write(str(total))
 
-    logging.info(f'total: {total}')
+    log(f'total: {total}')
