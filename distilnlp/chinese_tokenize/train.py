@@ -218,7 +218,7 @@ if __name__ == '__main__':
     log(f'CUDA Version: {torch.version.cuda}')
     log(f"Using {DEVICE} device")
 
-    vocab = load_vocab(vocab_filepath, feature_unk_index)
+    vocab, vocav_parameters = load_vocab(vocab_filepath)
     print(f'vocab size: {len(vocab)}')
 
     with open(embedding_filepath, 'rb') as infile:

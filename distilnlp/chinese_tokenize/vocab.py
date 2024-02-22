@@ -2,36 +2,35 @@ import unicodedata
 import collections
 import argparse
 import pickle
-from typing import Union, Optional
+import os
+from typing import Union, Optional, BinaryIO, IO, Tuple
 
+import torch
 import torchtext
 import tqdm
 
 from distilnlp._utils.unicode import is_printable_symbol
 
-
-def save_vocab(stoi_filepath:str, vocab: Union[torchtext.vocab.Vocab, collections.OrderedDict]):
-    if isinstance(vocab, torchtext.vocab.Vocab):
-        stoi = vocab.get_stoi()
-    elif isinstance(vocab, collections.OrderedDict):
-        stoi = vocab
-    else:
-        raise ValueError(f'invalid vocab type: {type(vocab)}')
-    
-    with open(stoi_filepath, 'w') as outfile:
-        outfile.write('\n'.join(stoi.keys()))
+VocabParameters = collections.namedtuple('VocabParameters', ('ordered_dict', 'min_freq', 'default_index', 'padding_index'), defaults=(1, None, None))
 
 
-def load_vocab(stoi_filepath:str, default_idx:Optional[int]=None) -> torchtext.vocab.Vocab:
-    with open(stoi_filepath, 'r') as infile:
-        data = infile.read()
-        stoi = collections.OrderedDict([(s, i//2) for i, s in enumerate(data) if i%2==0])
-    vocab = torchtext.vocab.vocab(stoi)
+def save_vocab(parameters: VocabParameters, f:Union[str, os.PathLike, BinaryIO, IO[bytes]]):
+    torch.save(parameters._asdict(), f)
 
-    if not default_idx is None:
-        vocab.set_default_index(default_idx)
 
+def apply_parameters(parameters:VocabParameters) -> torchtext.vocab.vocab:
+    vocab = torchtext.vocab.vocab(parameters.ordered_dict, min_freq=parameters.min_freq)
+    if parameters:
+        vocab.set_default_index(parameters.default_index)
     return vocab
+
+
+def load_vocab(f:Union[str, os.PathLike, BinaryIO, IO[bytes]]) -> Tuple[torchtext.vocab.Vocab, VocabParameters]:
+    loaded = torch.load(f)
+    parameters = VocabParameters(**loaded)
+    vocab = apply_parameters(parameters)
+
+    return vocab, parameters
 
 
 def generate_char_counter(filepaths) -> collections.Counter:
@@ -45,9 +44,9 @@ def generate_char_counter(filepaths) -> collections.Counter:
     return counter
 
 
-def reduce_char_counter(char_counter: collections.Counter,
-                        min_freq:int = 100,
-                        filter_freq:int = 100000) -> collections.Counter:
+def clean_char_counter(char_counter: collections.Counter,
+                       min_freq:int = 100,
+                       filter_freq:int = 100000) -> collections.Counter:
     new_counter = collections.Counter()
 
     for ch, count in tqdm.tqdm(char_counter.items()):
@@ -79,7 +78,7 @@ def reduce_char_counter(char_counter: collections.Counter,
 
 
 if __name__ == '__main__':
-    arg_parser = argparse.ArgumentParser(description='generate char counter.')
+    arg_parser = argparse.ArgumentParser(description='Generate the vocab.')
     arg_parser.add_argument('--file_paths', required=True, help='Paths to the corpus files. Multiple path are separated by commas.')
     arg_parser.add_argument('--save_filepath', required=True, help='The save path of preprocessed results.')
     arg_parser.add_argument('--min_freq', type=int, default=100, help='The minimum frequency needed to include a token in the vocabulary.')
@@ -93,8 +92,16 @@ if __name__ == '__main__':
 
     counter = generate_char_counter(file_paths)
     print(f'All: {len(counter)}')
-    counter = reduce_char_counter(counter, min_freq=min_freq, filter_freq=filter_freq)
+    counter = clean_char_counter(counter, min_freq=min_freq, filter_freq=filter_freq)
     print(f'Accept: {len(counter)}')
 
-    with open(save_filepath, 'wb') as outfile:
-        pickle.dump(counter, outfile)
+    # https://pytorch.org/text/stable/vocab.html#torchtext.vocab.vocab
+    sorted_by_freq = sorted(counter.items(), key=lambda x: x[1], reverse=True)
+    ordered_dict = collections.OrderedDict(sorted_by_freq)
+
+    parameters = VocabParameters(ordered_dict, min_freq=min_freq)
+
+    print(f'Vocab: {parameters}')
+    print(f'Total: {len(parameters.ordered_dict)}')
+
+    save_vocab(parameters, save_filepath)
