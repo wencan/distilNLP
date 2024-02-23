@@ -68,7 +68,7 @@ def train(model:AttentionTCN,
 
         total += torch.sum(lengths)
 
-    return sum(losses)/len(losses), total_acc/total
+    return total_acc/total, sum(losses)/len(losses)
 
 
 def valid(model:AttentionTCN, 
@@ -101,7 +101,7 @@ def valid(model:AttentionTCN,
 
             total += torch.sum(lengths)
     
-    return sum(losses)/len(losses), total_acc/total
+    return total_acc/total, sum(losses)/len(losses)
 
 
 train_with_profile = profile_trace(train, print_fn=log)
@@ -132,16 +132,16 @@ def cross_train_valid(model:AttentionTCN,
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
         if epoch == 0:
-            train_loss, train_acc = train_with_profile(model, codec, train_loader, optimizer)
+            train_acc, train_loss = train_with_profile(model, codec, train_loader, optimizer)
         else:
-            train_loss, train_acc = train(model, codec, train_loader, optimizer)
-        log(f'Epoch {epoch+1} train loss: {train_loss:.8f}, train accuracy: {train_acc:.8f}')
+            train_acc, train_loss= train(model, codec, train_loader, optimizer)
+        log(f'Epoch {epoch+1} train accuracy: {train_acc:.8f}, train loss: {train_loss:.8f}')
         
         if epoch == 0:
-            valid_loss, valid_acc = valid_with_profile(model, codec, valid_loader)
+            valid_acc , valid_loss= valid_with_profile(model, codec, valid_loader)
         else:
-            valid_loss, valid_acc = valid(model, codec, valid_loader)
-        log(f'Epoch {epoch+1} valid loss: {valid_loss:.8f}, valid accuracy: {valid_acc:.8f}')
+            valid_acc , valid_loss= valid(model, codec, valid_loader)
+        log(f'Epoch {epoch+1} valid accuracy: {valid_acc:.8f}, valid loss: {valid_loss:.8f}')
 
         latest_model_state = model.state_dict()
         
@@ -269,10 +269,10 @@ if __name__ == '__main__':
     test_set = LMDBDataSet(preprocessed_path, test_indexes)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size, shuffle=True, collate_fn=collate_batch)
     if not state_dict is None:
-        acc_test, loss_test = valid(model, codec, test_loader)
-        log(f'test accuracy: {acc_test:.6f} test loss: {loss_test:.6f}')
+        test_acc, test_loss = valid(model, codec, test_loader)
+        log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
 
     cross_train_valid(model, codec, preprocessed_path, train_valid_indexes, batch_size, learning_rate, num_epochs)
 
-    acc_test, loss_test = valid(model, codec, test_loader)
-    log(f'test accuracy: {acc_test:.6f} test loss: {loss_test:.6f}')
+    test_acc, test_loss = valid(model, codec, test_loader)
+    log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
