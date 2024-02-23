@@ -1,36 +1,46 @@
 import unicodedata
 import collections
 import argparse
-import pickle
-import os
-from typing import Union, Optional, BinaryIO, IO, Tuple
+import string
+from typing import Optional
 
-import torch
-import torchtext
 import tqdm
 
 from distilnlp._utils.unicode import is_printable_symbol
 
-VocabParameters = collections.namedtuple('VocabParameters', ('ordered_dict', 'min_freq', 'default_index', 'padding_index'), defaults=(1, None, None))
+
+def save_vocab(vocab: collections.OrderedDict, filepath: str):
+    with open(filepath, 'w') as outfile:
+        for idx, (s, i) in enumerate(vocab.items()):
+            if idx != 0:
+                outfile.write('\n')
+            outfile.write(f'{s}\t{i}')
 
 
-def save_vocab(parameters: VocabParameters, f:Union[str, os.PathLike, BinaryIO, IO[bytes]]):
-    torch.save(parameters._asdict(), f)
+def load_vocab(filepath:str) -> collections.OrderedDict:
+    ordered_dict = collections.OrderedDict()
 
+    with open(filepath) as infile:
+        while True:
+            s = infile.read(1)
+            if s == '': # char
+                break
+            t = infile.read(1)
+            while t != '\t':    # words
+                s += t
+                t = infile.read(1)
+            
+            digits = ''
+            while True:
+                d = infile.read(1)
+                if d in ('\n', ''):
+                    break
+                digits += d
+            i = int(digits)
 
-def apply_parameters(parameters:VocabParameters) -> torchtext.vocab.vocab:
-    vocab = torchtext.vocab.vocab(parameters.ordered_dict, min_freq=parameters.min_freq)
-    if parameters:
-        vocab.set_default_index(parameters.default_index)
-    return vocab
+            ordered_dict[s] = i
 
-
-def load_vocab(f:Union[str, os.PathLike, BinaryIO, IO[bytes]]) -> Tuple[torchtext.vocab.Vocab, VocabParameters]:
-    loaded = torch.load(f)
-    parameters = VocabParameters(**loaded)
-    vocab = apply_parameters(parameters)
-
-    return vocab, parameters
+    return ordered_dict
 
 
 def generate_char_counter(filepaths) -> collections.Counter:
@@ -99,9 +109,8 @@ if __name__ == '__main__':
     sorted_by_freq = sorted(counter.items(), key=lambda x: x[1], reverse=True)
     ordered_dict = collections.OrderedDict(sorted_by_freq)
 
-    parameters = VocabParameters(ordered_dict, min_freq=min_freq)
+    save_vocab(ordered_dict, save_filepath)
 
-    print(f'Vocab: {parameters}')
-    print(f'Total: {len(parameters.ordered_dict)}')
-
-    save_vocab(parameters, save_filepath)
+    print(f'Vocab: {ordered_dict}')
+    print(f'Total: {len(ordered_dict)}')
+    print(f'min_freq: {min_freq}')

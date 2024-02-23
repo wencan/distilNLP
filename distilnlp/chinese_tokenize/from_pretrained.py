@@ -6,7 +6,7 @@ import transformers
 import torch
 from sklearn.decomposition import IncrementalPCA
 
-from .vocab import save_vocab, load_vocab, VocabParameters
+from .vocab import save_vocab, load_vocab
 
 def decomposition_weight(weight: torch.tensor, new_dim:int, batch_size:int = 256):
     pca = IncrementalPCA(n_components=new_dim, batch_size=batch_size)
@@ -56,35 +56,38 @@ if __name__ == '__main__':
     arg_parser.add_argument('--vocab_filepath', required=True, help='Path to the vocab.')
     arg_parser.add_argument('--new_vocab_filepath', required=True, help='Path to save the new vocab.')
     arg_parser.add_argument('--embedding_filepath', required=True, help='Path to save the embedding weight.')
+    arg_parser.add_argument('--min_freq', type=int, default=100, help='The minimum frequency needed to include a token in the vocabulary.')
     args = arg_parser.parse_args()
 
     vocab_filepath = args.vocab_filepath
     new_vocab_filepath = args.new_vocab_filepath
     embedding_filepath = args.embedding_filepath
+    min_freq = args.min_freq
     pretained_model = 'hfl/chinese-electra-180g-small-discriminator' # no space symbol!!!
     tokenizer_class = transformers.ElectraTokenizer
     pretraining_class = transformers.ElectraForPreTraining
     pad_token:str = '[PAD]'
     unk_token:str = '[UNK]'
 
-    _, parameters = load_vocab(vocab_filepath)
+    ordered_dict = load_vocab(vocab_filepath)
+    print(ordered_dict)
     
-    ordered_dict, embedding_weight = embedding_from_pretained(parameters.ordered_dict, 
-                                                             pretained_model,
-                                                             tokenizer_class,
-                                                             pretraining_class
-                                                             )
-    min_freq = parameters.min_freq
+    ordered_dict, embedding_weight = embedding_from_pretained(ordered_dict, 
+                                                              pretained_model,
+                                                              tokenizer_class,
+                                                              pretraining_class
+                                                              )
     ordered_dict[pad_token] = min_freq
     ordered_dict[unk_token] = min_freq
     tokens = list(ordered_dict.keys())
     default_index = tokens.index(unk_token)
     padding_index = tokens.index(pad_token)
-    parameters = VocabParameters(ordered_dict, min_freq=min_freq, default_index=default_index, padding_index=padding_index)
 
-    save_vocab(parameters, new_vocab_filepath)
+    save_vocab(ordered_dict, new_vocab_filepath)
     torch.save(embedding_weight, embedding_filepath)
 
-    print(parameters)
-    print(f'vocab size: {len(parameters.ordered_dict)}')
+    print(f'vocab: {ordered_dict}')
+    print(f'vocab size: {len(ordered_dict)}')
     print(f'weight size: {embedding_weight.size()}')
+    print(f'padding index: {padding_index}')
+    print(f'default index: {default_index}')

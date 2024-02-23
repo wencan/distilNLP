@@ -8,6 +8,7 @@ from typing import Optional, Sequence, Literal
 import tqdm
 import torch
 import torch.utils.data
+import torchtext
 
 from distilnlp._utils.data import LMDBDataSet
 from distilnlp._utils.profile import profile_trace
@@ -187,11 +188,13 @@ if __name__ == '__main__':
     arg_parser.add_argument('--attention_implementation', default='local-attention', help='Implementation of Attention Mechanisms. Options: local-attention and natten.')
     arg_parser.add_argument('--attention_window_size', type=int, default=3, help='Size of attention window.')
     arg_parser.add_argument('--preprocessed_path', required=True, help='Path to the preprocessed file.')
-    arg_parser.add_argument('--preprocessed_total', type=int, default=0, help='The total number of preprocessed data.')
+    arg_parser.add_argument('--preprocessed_total', type=int, default=0, help='The total number of preprocessed data. If not provided, the script will attempt to search from the directory specified by preprocessed_path.')
+    arg_parser.add_argument('--state_dict_filepath', default='', help='The file path of the state dict of the pre-trained model. If not provided, the script will train a new model from scratch.')
     arg_parser.add_argument('--vocab_filepath', help='Path to vocab dict. If training a new model from scratch, this is required.')
     arg_parser.add_argument('--padding_index', type=int, default=0, help='Index of padding token.')
-    arg_parser.add_argument('--unknown_index', type=int, default=1, help='Index of unknown token.')
-    arg_parser.add_argument('--embedding_filepath', help='Path to embedding weight file. If training a new model from scratch, this is required.')
+    arg_parser.add_argument('--default_index', type=int, default=1, help='Index of unknown token.')
+    arg_parser.add_argument('--min_freq', type=int, default=100, help='The minimum frequency needed to include a token in the vocabulary.')
+    arg_parser.add_argument('--embedding_filepath', help='Path to embedding weight file. The script will also attempt to look up embedding weights from the state dict. If training a new model from scratch, this is required.')
     arg_parser.add_argument('--model_filepath', default='', help='Path to the pre-trained model file. If not provided, the script will train a new model from scratch.')
     arg_parser.add_argument('--save_filedir', required=True, help='File directory to save the trained model.')
     arg_parser.add_argument('--learning_rate', type=float, default=0.005, help='Learning rate.')
@@ -204,9 +207,11 @@ if __name__ == '__main__':
 
     preprocessed_path = args.preprocessed_path
     preprocessed_total = args.preprocessed_total
+    state_dict_filepath = args.state_dict_filepath
     vocab_filepath = args.vocab_filepath
-    feature_pad_index = args.padding_index
-    feature_unk_index = args.unknown_index
+    padding_index = args.padding_index
+    default_index = args.default_index
+    min_freq = args.min_freq
     embedding_filepath = args.embedding_filepath
     model_filepath = args.model_filepath
     save_filedir = args.save_filedir
@@ -218,11 +223,25 @@ if __name__ == '__main__':
     log(f'CUDA Version: {torch.version.cuda}')
     log(f"Using {DEVICE} device")
 
-    vocab, vocav_parameters = load_vocab(vocab_filepath)
+    # load vocab
+    ordered_dict = load_vocab(vocab_filepath)
+    vocab = torchtext.vocab.vocab(ordered_dict, min_freq)
+    vocab.set_default_index(default_index)
     print(f'vocab size: {len(vocab)}')
 
-    with open(embedding_filepath, 'rb') as infile:
-        embedding_weight = torch.load(infile)
+    # load state dict
+    state_dict = None
+    if state_dict_filepath:
+        state_dict = torch.load(state_dict_filepath, map_location=torch.device(DEVICE))
+    # load embedding
+    embedding_weight = None
+    if embedding_filepath:
+        with open(embedding_filepath, 'rb') as infile:
+            embedding_weight = torch.load(infile, map_location=torch.device(DEVICE))
+    if embedding_weight is None and state_dict:
+        embedding_weight = state_dict['embedding.weight']
+    if embedding_weight is None:
+        raise ValueError('no embedding!')
     embedding_weight = embedding_weight.type(torch.get_default_dtype())
 
     # prepare data set
@@ -230,25 +249,30 @@ if __name__ == '__main__':
         with open(os.path.join(preprocessed_path, 'total.txt')) as infile:
             preprocessed_total = int(infile.readline())
     data_indexes = range(preprocessed_total)
-    test_ratio = min(0.1, 1000/preprocessed_total)
+    test_ratio = min(0.1, 100000/preprocessed_total)
     train_valid_ratio = 1 - test_ratio
 
     train_valid_indexes, test_indexes = torch.utils.data.random_split(data_indexes, [train_valid_ratio, test_ratio])
     log(f'train and valid: {len(train_valid_indexes)}, test: {len(test_indexes)}')
 
-    codec = Codec(vocab, attention_window_size, feature_pad_index)
-    model = AttentionTCN(attention_implementation, attention_window_size, embedding_weight, feature_pad_index)
+    # load model
+    codec = Codec(vocab, attention_window_size, padding_index)
+    model = AttentionTCN(attention_implementation, attention_window_size, embedding_weight, padding_index)
+    if not state_dict is None:
+        model.load_state_dict(state_dict)
+    else:
+        log('train a new model from scratch.')
     model.to(DEVICE)
     print(model)
     print(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
     test_set = LMDBDataSet(preprocessed_path, test_indexes)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size, shuffle=True, collate_fn=collate_batch)
-    if model_filepath:
-        acc_test, loss_test = valid(model, test_loader)
+    if not state_dict is None:
+        acc_test, loss_test = valid(model, codec, test_loader)
         log(f'test accuracy: {acc_test:.6f} test loss: {loss_test:.6f}')
 
     cross_train_valid(model, codec, preprocessed_path, train_valid_indexes, batch_size, learning_rate, num_epochs)
 
-    acc_test, loss_test = valid(model, test_loader)
+    acc_test, loss_test = valid(model, codec, test_loader)
     log(f'test accuracy: {acc_test:.6f} test loss: {loss_test:.6f}')
