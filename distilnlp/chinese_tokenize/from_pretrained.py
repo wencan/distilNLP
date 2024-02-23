@@ -74,7 +74,7 @@ if __name__ == '__main__':
     unk_token:str = '[UNK]'
 
     ordered_dict = load_vocab(vocab_filepath)
-    print(ordered_dict)
+    print(f'original vocab: {ordered_dict}')
     
     ordered_dict, embedding_weight = embedding_from_pretained(ordered_dict, 
                                                               pretrained_model,
@@ -90,7 +90,7 @@ if __name__ == '__main__':
     save_vocab(ordered_dict, new_vocab_filepath)
     torch.save(embedding_weight, embedding_filepath)
 
-    print(f'vocab: {ordered_dict}')
+    print(f'new vocab: {ordered_dict}')
     print(f'vocab size: {len(ordered_dict)}')
     print(f'weight size: {embedding_weight.size()}')
     print(f'padding index: {padding_index}')
