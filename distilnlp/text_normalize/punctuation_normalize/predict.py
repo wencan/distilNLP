@@ -1,5 +1,6 @@
 import os
 import io
+from typing import Union, BinaryIO, IO, Sequence
 
 import torch
 
@@ -12,23 +13,24 @@ DEVICE = (
     else "cpu"
 )
 
-def punctuation_normalize(model_or_modelfile, texts):
+def load_model(state_dict_file:Union[str, os.PathLike, BinaryIO, IO[bytes]]):
+    model = ConvBiGRU()
+    model.load_state_dict(torch.load(state_dict_file, map_location=torch.device(DEVICE)))
+    model = model.to(DEVICE)
+    return model
+
+
+def punctuation_normalize(model, texts: Sequence[str]):
     features_seqs, labels_seqs, indexes_seqs = zip(*[text_to_features_labels(text) for text in texts])
     lengths = torch.as_tensor([len(features) for features in features_seqs])
     pad_features_seqs = torch.nn.utils.rnn.pad_sequence([torch.tensor(features, device=DEVICE) for features in features_seqs], batch_first=True)
 
-    if isinstance(model_or_modelfile, str) or \
-        isinstance(model_or_modelfile, os.PathLike) or \
-        isinstance(model_or_modelfile, io.BytesIO):
-        model = ConvBiGRU()
-        model.load_state_dict(torch.load(model_or_modelfile, map_location=torch.device(DEVICE)))
-    else:
-        model = model_or_modelfile
-    model = model.to(DEVICE)
     model.eval()
     with torch.no_grad():
         logits_seqs = model(pad_features_seqs, lengths)
     
+    indices_seqs = torch.argmax(logits_seqs, dim=2)
+
     normalized = []
 
     for i, text in enumerate(texts):
@@ -36,7 +38,7 @@ def punctuation_normalize(model_or_modelfile, texts):
         labels = labels_seqs[i]
         
         indexes = indexes_seqs[i]
-        logits = logits_seqs[i]
+        indices = indices_seqs[i]
 
         chs = list(text)
         for feature_idx, label in enumerate(labels):
@@ -45,9 +47,9 @@ def punctuation_normalize(model_or_modelfile, texts):
             feature = features[feature_idx]
             text_index = indexes[feature_idx]
 
-            label = torch.argmax(logits[feature_idx])
+            indice = indices[feature_idx]
             try:
-                punctuation = locate_punctuations(feature, label)
+                punctuation = locate_punctuations(feature, indice)
             except IndexError:
                 pass
             else:
@@ -61,10 +63,10 @@ def punctuation_normalize(model_or_modelfile, texts):
 if __name__ == '__main__':
     import argparse
     arg_parser = argparse.ArgumentParser(description='punctuation normalize.')
-    arg_parser.add_argument('--model_filepath', required=True, help='Path to the pre-trained model file.')
+    arg_parser.add_argument('--state_dict_filepath', required=True, help='Path to the pre-trained model file.')
     args = arg_parser.parse_args()
 
-    model_filepath = args.model_filepath
+    state_dict_filepath = args.state_dict_filepath
 
     texts = ['11。 区分自然现象与自然灾害的关键因素是生命和财产的损失.',
              'The Workshop held plenary and working group meetings.',
@@ -80,7 +82,8 @@ if __name__ == '__main__':
              'BDE-209的潜在生殖毒性也在稀有鮈鲫中体现（Li，2011年）。',
              'if concatenating bytes objects, you can similarly use bytes.join（） or io.BytesIO, or you can do in-place concatenation with a bytearray object。 bytearray objects are mutable and have an efficient overallocation mechanism',
             ]
-    texts = punctuation_normalize(model_filepath, texts)
+    model = load_model(state_dict_filepath)
+    texts = punctuation_normalize(model, texts)
     
     for text in texts:
         print(text)

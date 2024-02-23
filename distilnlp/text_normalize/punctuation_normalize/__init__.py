@@ -1,1 +1,1 @@
-from .pred import punctuation_normalize
+from .predict import load_model, punctuation_normalize

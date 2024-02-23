@@ -5,7 +5,7 @@ from typing import Union, List
 from .emoji import EMOJI_DICT
 from distilnlp._utils.modelfile import downloaded_model_filepath
 from distilnlp._utils.unicode import is_printable_symbol, space_symbol, is_exceptional_symbol
-from .punctuation_normalize import punctuation_normalize
+from .punctuation_normalize import load_model, punctuation_normalize
 
 __all__ = [
     'text_normalize'
@@ -176,7 +176,8 @@ def text_punctuation_normalize(texts):
     url = 'https://raw.githubusercontent.com/wencan/distilNLP/150add0adb22af560591df5674101ac8ba3fe324/assets/model/punctuation_normalize/state_dict_20240218211723.pt'
     filepath = downloaded_model_filepath(model_name, model_version, url)
 
-    texts = punctuation_normalize(filepath, texts)
+    model = load_model(filepath)
+    texts = punctuation_normalize(model, texts)
     return texts
 
 
