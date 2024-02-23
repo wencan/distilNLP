@@ -61,6 +61,14 @@ class TestFeature(TestCase):
         expect_labels = [label_single, label_head, label_tail, label_single, label_single, label_single, label_head, label_tail, label_single, label_single, label_head, label_tail, label_head, label_tail, label_single, label_ignore]
         self.assertEqual(text_to_features_labels(text, segments), (expect_features, expect_labels))
 
+    def test_segmented_mystery_symbol_to_features_labels_6(self):
+        # contain Replacement Character
+        text = '''過此以往,未之或知也已.�
+'''
+        segments = ['過', '此', '以往', ',', '未', '之', '或', '知', '也', '已', '.']
+        expect_features = list(text)
+        expect_labels = [label_single, label_single, label_head, label_tail, label_single, label_single, label_single, label_single, label_single, label_single, label_single, label_single, label_ignore, label_ignore]
+        self.assertEqual(text_to_features_labels(text, segments), (expect_features, expect_labels))
 
 if __name__ == '__main__':
     main()

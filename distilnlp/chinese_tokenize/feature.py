@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from distilnlp._utils.unicode import is_printable_symbol, space_symbol
+from distilnlp._utils.unicode import is_printable_symbol, space_symbol, is_exceptional_symbol
 
 num_labels = 2
 label_pad = -1
@@ -31,7 +31,7 @@ def text_to_features_labels(text:str, segments:Sequence[str]):
         for segment_idx, segment_ch in enumerate(segment):
             while True:
                 if text[text_idx] != segment_ch:
-                    if not is_printable_symbol(text[text_idx]): # skip unprintable symbols
+                    if not is_printable_symbol(text[text_idx]) or is_exceptional_symbol(text[text_idx]): # skip unprintable symbols
                         features.append(text[text_idx])
                         labels.append(label_ignore)
                         text_idx+=1
@@ -59,7 +59,7 @@ def text_to_features_labels(text:str, segments:Sequence[str]):
         segments_idx+=1
     
     while text_idx < len(text):
-        if not (text[text_idx] in space_symbol or not is_printable_symbol(text[text_idx])):
+        if not (text[text_idx] in space_symbol or not is_printable_symbol(text[text_idx]) or is_exceptional_symbol(text[text_idx])):
             raise ValueError(f'Ignored non-whitespace characters: {text[text_idx]}. text index: {text_idx}')
         features.append(text[text_idx])
         labels.append(label_ignore)

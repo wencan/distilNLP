@@ -15,3 +15,11 @@ def is_printable_symbol(ch):
         return False
     
     return True
+
+def is_exceptional_symbol(ch):
+    '''Excluding Non-Printable Characters'''
+
+    # https://en.wikipedia.org/wiki/Specials_(Unicode_block)
+    if ch in ('\uFFFC', '\uFFFD'):
+        return True
+    return False
