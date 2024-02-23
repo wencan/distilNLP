@@ -130,7 +130,7 @@ class Codec:
     def Encode(self, texts:Sequence[str], 
                labels_seqs:Optional[Sequence[str]]=None, 
                device:Union[str, torch.device, int]=None,
-               ) -> Tuple[torch.tensor, Optional[torch.tensor], Sequence[int]]:
+               ) -> Union[Tuple[torch.tensor, torch.tensor, Sequence[int]], Tuple[torch.tensor, Sequence[int]]]:
         lengths = torch.tensor([len(text) for text in texts])
         max_length = torch.max(lengths)
 
