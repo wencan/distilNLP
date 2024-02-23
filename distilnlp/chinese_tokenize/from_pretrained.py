@@ -87,6 +87,8 @@ if __name__ == '__main__':
     default_index = tokens.index(unk_token)
     padding_index = tokens.index(pad_token)
 
+    embedding_weight = embedding_weight.type(torch.get_default_dtype())
+
     save_vocab(ordered_dict, new_vocab_filepath)
     torch.save(embedding_weight, embedding_filepath)
 
