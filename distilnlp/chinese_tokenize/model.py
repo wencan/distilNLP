@@ -56,12 +56,20 @@ class AttentionTCN(torch.nn.Module):
     _attention_num_heads = 8
     _attention_dropout = 0.1
 
-    _tcn_output_size = 128
-    _tcn_num_channels = [128, 128, 128, _tcn_output_size]
-    _tcn_kernel_size = 2
-    _tcn_dropout = 0.1
+    _tcn0_output_size = 128
+    _tcn0_num_channels = [128, _tcn0_output_size]
+    _tcn0_kernel_size = 2
+    _tcn0_dropout = 0.1
 
-    _fc_input_size = _tcn_output_size
+    # inverted
+    _tcn1_input_size = _tcn0_output_size
+    _tcn1_output_size = 128
+    _tcn1_num_channels = [128, _tcn0_output_size]
+    _tcn1_kernel_size = 2
+    _tcn1_dropout = 0.1
+
+    _pool_output_size = _tcn1_output_size // 2
+    _fc_input_size = _pool_output_size
     _fc_output_size = num_labels
 
     def __init__(self, 
@@ -85,12 +93,21 @@ class AttentionTCN(torch.nn.Module):
         self.attention_gelu = torch.nn.GELU()
         self.attention_dropout = torch.nn.Dropout(self._attention_dropout)
 
-        self.tcn = TemporalConvNet(self._attention_dim, self._tcn_num_channels, self._tcn_kernel_size, self._tcn_dropout)
-        self.tcn_res_block = GatedResidualBlock('avg', self._tcn_output_size)
-        self.tcn_layer_norm = torch.nn.LayerNorm(self._tcn_output_size)
-        self.tcn_gelu = torch.nn.GELU()
-        self.tcn_dropout = torch.nn.Dropout(self._tcn_dropout)
+        self._tcn0_input_size = self._attention_dim
+        self.tcn0 = TemporalConvNet(self._tcn0_input_size, self._tcn0_num_channels, self._tcn0_kernel_size, self._tcn0_dropout)
+        self.tcn0_res_block = GatedResidualBlock('max', self._tcn0_output_size)
+        self.tcn0_layer_norm = torch.nn.LayerNorm(self._tcn0_output_size)
+        self.tcn0_gelu = torch.nn.GELU()
+        self.tcn0_dropout = torch.nn.Dropout(self._tcn0_dropout)
 
+        self._tcn1_input_size = self._attention_dim + self._tcn0_output_size
+        self.tcn1 = TemporalConvNet(self._tcn1_input_size, self._tcn1_num_channels, self._tcn1_kernel_size, self._tcn1_dropout)
+        self.tcn1_res_block = GatedResidualBlock('max', self._tcn1_output_size)
+        self.tcn1_layer_norm = torch.nn.LayerNorm(self._tcn1_output_size)
+        self.tcn1_gelu = torch.nn.GELU()
+        self.tcn1_dropout = torch.nn.Dropout(self._tcn1_dropout)
+
+        self.pool = torch.nn.AdaptiveMaxPool1d(self._pool_output_size)
         self.fc = torch.nn.Linear(self._fc_input_size, self._fc_output_size)
 
     def forward(self, features_seqs):
@@ -103,13 +120,25 @@ class AttentionTCN(torch.nn.Module):
         attention_out = out.clone()
 
         out = out.transpose(1, 2)
-        out = self.tcn(out) # (batch_size, *, max_length) -> (batch_size, *, max_length)
+        out = self.tcn0(out) # (batch_size, *, max_length) -> (batch_size, *, max_length)
         out = out.transpose(1, 2)
-        out = self.tcn_res_block(attention_out, out)
-        out = self.tcn_layer_norm(out)
-        out = self.tcn_gelu(out)
-        out = self.tcn_dropout(out)
+        out = self.tcn0_res_block(attention_out, out)
+        out = self.tcn0_layer_norm(out)
+        out = self.tcn0_gelu(out)
+        out = self.tcn0_dropout(out)
+        tcn0_out = out.clone()
 
+        inverted_attention_out = torch.flip(attention_out, (1, )) # inverted
+        out = torch.cat((inverted_attention_out, out), dim=2)
+        out = out.transpose(1, 2)
+        out = self.tcn1(out) # (batch_size, *, max_length) -> (batch_size, *, max_length)
+        out = out.transpose(1, 2)
+        out = self.tcn1_res_block(tcn0_out, out)
+        out = self.tcn1_layer_norm(out)
+        out = self.tcn1_gelu(out)
+        out = self.tcn1_dropout(out)
+
+        out = self.pool(out)
         out = self.fc(out)
 
         return out
