@@ -202,19 +202,20 @@ if __name__ == '__main__':
     embedding_filepath = args.embedding_filepath
     attention_window_size = 3
 
-    vocab = load_vocab(vocab_filepath, unknown_index)
+    ordered_dict = load_vocab(vocab_filepath)
+    vocab = torchtext.vocab.vocab(ordered_dict)
+    vocab.set_default_index(unknown_index)
     print(f'vocab size: {len(vocab)}')
 
     with open(embedding_filepath, 'rb') as infile:
         embedding_weight = torch.load(infile)
-    embedding_weight = embedding_weight.type(torch.get_default_dtype())
 
     codec = Codec(vocab, attention_window_size)
     model = AttentionTCN('local-attention', attention_window_size, embedding_weight, padding_index)
     print(model)
     for name, p in model.named_parameters():
         print(f'{name} parameters: {p.numel()}')
-    print(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}\n')
+    print(f'Total number of learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}\n')
     # test
     inputs = ['6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。', 
               'An implementation of local windowed attention for language modeling', 
@@ -227,6 +228,6 @@ if __name__ == '__main__':
     print(model)
     for name, p in model.named_parameters():
         print(f'{name} parameters: {p.numel()}')
-    print(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
+    print(f'Total number of learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
     # test
     outputs = model(inputs)
