@@ -159,32 +159,6 @@ class Codec:
         return features_seqs, lengths
 
 
-class Tokenizer(torch.nn.Module, Codec):
-    def __init__(self, 
-                 attention_implementation: Literal['local-attention', 'natten'],
-                 attention_window_size:int,
-                 vocab: torchtext.vocab.Vocab, 
-                 embedding_weight:torch.tensor,
-                 feature_pad_value=0,
-                 label_pad_value:int=0,
-                 ):
-        torch.nn.Module.__init__(self)
-        Codec.__init__(self, vocab, attention_window_size, feature_pad_value, label_pad_value)
-
-        self.model = AttentionTCN(attention_implementation, 
-                                  attention_window_size, 
-                                  embedding_weight,
-                                  label_pad_value,
-                                  )
-    
-    def forward(self, texts:Sequence[str]):
-        features_seqs, _ = self.Encode(texts)
-
-        out = self.model(features_seqs)
-
-        # return features_seqs, lengths, paded_length
-
-
 if __name__ == '__main__':
     import argparse
     from .vocab import load_vocab

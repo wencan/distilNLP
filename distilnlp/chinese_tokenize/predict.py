@@ -1,5 +1,6 @@
 
 import argparse
+import collections
 from typing import Literal, Sequence
 
 import torch
@@ -17,27 +18,53 @@ DEVICE = (
     else "cpu"
 )
 
-def tokenize(codec: Codec, model: AttentionTCN, texts: Sequence[str]):
-    input_ids_seqs, _ = codec.Encode(texts, device=DEVICE)
-    logits_seqs = model(input_ids_seqs)
-    indices_seqs = torch.argmax(logits_seqs, dim=2)
 
-    segments_seqs = []
-    for i, text in enumerate(texts):
-        segments = []
-        segment = []
-        for j, ch in enumerate(text):
-            label = indices_seqs[i][j]
-            if is_start_label(label):
-                if segment:
-                    segments.append(''.join(segment))
-                    segment = []
-            segment.append(ch)
-        if segment:
-            segments.append(''.join(segment))
-        if segments:
-            segments_seqs.append(segments)
-    return segments_seqs
+class Tokenizer(torch.nn.Module):
+    def __init__(self, 
+                 attention_implementation: Literal['local-attention', 'natten'],
+                 attention_window_size:int,
+                 model_state_dict,
+                 vocab_ordered_dict: collections.OrderedDict, 
+                 padding_index:int=0,
+                 default_index:int=1,
+                 vocab_min_freq:int=100,
+                 ):
+        super(Tokenizer, self).__init__()
+
+        vocab = torchtext.vocab.vocab(vocab_ordered_dict, vocab_min_freq)
+        vocab.set_default_index(default_index)
+        self.codec = Codec(vocab, attention_window_size, padding_index)
+
+        embedding_weight = model_state_dict['embedding.weight']
+        self.model = AttentionTCN(attention_implementation, 
+                                  attention_window_size, 
+                                  embedding_weight,
+                                  pad_idx=padding_index
+                                  )
+        self.model.load_state_dict(model_state_dict)
+        self.model.to(DEVICE)
+    
+    def forward(self, texts:Sequence[str]):
+        input_ids_seqs, _ = self.codec.Encode(texts, device=DEVICE)
+        logits_seqs = self.model(input_ids_seqs)
+        indices_seqs = torch.argmax(logits_seqs, dim=2)
+
+        segments_seqs = []
+        for i, text in enumerate(texts):
+            segments = []
+            segment = []
+            for j, ch in enumerate(text):
+                label = indices_seqs[i][j]
+                if is_start_label(label):
+                    if segment:
+                        segments.append(''.join(segment))
+                        segment = []
+                segment.append(ch)
+            if segment:
+                segments.append(''.join(segment))
+            if segments:
+                segments_seqs.append(segments)
+        return segments_seqs
 
 
 if __name__ == '__main__':
@@ -60,26 +87,17 @@ if __name__ == '__main__':
     default_index = args.default_index
     min_freq = args.min_freq
 
-    # load vocab
     ordered_dict = load_vocab(vocab_filepath)
-    vocab = torchtext.vocab.vocab(ordered_dict, min_freq)
-    vocab.set_default_index(default_index)
-
-    # load state dict
     state_dict = torch.load(state_dict_filepath, map_location=torch.device(DEVICE))
-    # load embedding
-    embedding_weight = state_dict['embedding.weight']
 
-    # load model
-    codec = Codec(vocab, attention_window_size, padding_index)
-    model = AttentionTCN(attention_implementation, attention_window_size, embedding_weight, padding_index)
-    model.load_state_dict(state_dict)
-    model.to(DEVICE)
+    tokenizer = Tokenizer(attention_implementation, attention_window_size,
+                          state_dict, 
+                          ordered_dict, padding_index, default_index, min_freq)
 
     texts = ['6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。', 
              'An implementation of local windowed attention for language modeling', 
              '朝散大夫右諫議大夫權御史中丞充理檢使上護軍賜紫金魚袋臣司馬光奉敕編集'
             ]
-    segments_seqs = tokenize(codec, model, texts)
+    segments_seqs = tokenizer(texts)
     for segments in segments_seqs:
         print(segments)
