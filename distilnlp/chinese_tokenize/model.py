@@ -143,7 +143,7 @@ class Codec:
 
         features_seqs = []
         targets_seqs = []
-        features_seqs = [torch.tensor([self.vocab[ch] for ch in text], device=device) for text in texts]
+        features_seqs = [torch.tensor(self.vocab.lookup_indices(list(text)), device=device) for text in texts]
         features_seqs = torch.nn.utils.rnn.pad_sequence(features_seqs, batch_first=True, padding_value=self.feature_pad_value)
         if pad_length:
             features_seqs = torch.nn.functional.pad(features_seqs, (0, pad_length), value=self.feature_pad_value)
