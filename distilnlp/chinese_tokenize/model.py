@@ -168,20 +168,15 @@ class Codec:
             padded_length = (max_length // self.attention_window_size + 1) * self.attention_window_size
         else:
             padded_length = max_length
-        pad_length = padded_length - max_length
 
         features_seqs = []
         targets_seqs = []
-        features_seqs = [torch.tensor(self.vocab.lookup_indices(list(text)), device=device) for text in texts]
-        features_seqs = torch.nn.utils.rnn.pad_sequence(features_seqs, batch_first=True, padding_value=self.feature_pad_value)
-        if pad_length:
-            features_seqs = torch.nn.functional.pad(features_seqs, (0, pad_length), value=self.feature_pad_value)
-
+        features_seqs = [self.vocab.lookup_indices(list(text)) for text in texts]
+        features_seqs = [features + [self.feature_pad_value]*(padded_length - lengths[idx]) for idx, features in enumerate(features_seqs)]
+        features_seqs = torch.tensor(features_seqs, device=device) # Optimized for memory allocation
         if labels_seqs:
-            targets_seqs = [torch.tensor(labels, device=device) for labels in labels_seqs]
-            targets_seqs = torch.nn.utils.rnn.pad_sequence(targets_seqs, batch_first=True, padding_value=self.label_pad_value)
-            if pad_length:
-                targets_seqs = torch.nn.functional.pad(targets_seqs, (0, pad_length), value=self.label_pad_value)
+            targets_seqs = [labels + [self.label_pad_value]*(padded_length - lengths[idx]) for idx, labels in enumerate(labels_seqs)]
+            targets_seqs = torch.tensor(targets_seqs, device=device) # Optimized for memory allocation
 
         if labels_seqs:
             return features_seqs, targets_seqs, lengths
