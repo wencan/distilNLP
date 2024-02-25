@@ -39,7 +39,7 @@ def train(model:AttentionTCN,
           optimizer:Optional[torch.optim.Optimizer]=None,
           ):
     assert codec.label_pad_value == label_pad
-    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad)
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad, label_smoothing=0.1)
 
     total, total_acc = 0, 0
     losses = []
@@ -76,7 +76,7 @@ def valid(model:AttentionTCN,
           loader:torch.utils.data.DataLoader, 
           ):
     assert codec.label_pad_value == label_pad
-    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad)
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad, label_smoothing=0.1)
 
     total, total_acc = 0, 0
     losses = []
