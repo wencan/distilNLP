@@ -7,7 +7,7 @@ import lmdb
 
 class LMDBWriter(torch.utils.data.Dataset):
     def __init__(self, dir_path, map_size=1024*1024*1024*1024, sync=True, dumps=pickle.dumps):
-        super().__init__()
+        super(LMDBWriter, self).__init__()
         self._dumps = dumps
 
         if os.path.exists(dir_path):
@@ -53,7 +53,7 @@ class LMDBWriter(torch.utils.data.Dataset):
 
 class LMDBDataSet(torch.utils.data.Dataset):
     def __init__(self, filepath, indexes, map_size=1024*1024*1024*1024, loads=pickle.loads):
-        super().__init__()
+        super(LMDBDataSet, self).__init__()
         self._loads = loads
 
         self._filepath = filepath

@@ -1,11 +1,10 @@
-# import string
 import collections
 
-# import jieba
 
-__all__ = ['label_dim', 
+__all__ = ['num_labels', 
            'locate_punctuations', 
            'default_label', 
+           'default_label_index',
            'text_to_features_labels'
            ]
 
@@ -44,36 +43,28 @@ punctuation_to_feature = collections.OrderedDict({
     '”': feature_scale(ord('"')), # quotes, full width
 })
 
-label_dim = 3
+default_label = -1
+num_labels = 3 # half with、fullwith(left)、fullwith right
 
 punctuation_to_label = {}
-feature_to_punctuations = collections.defaultdict(lambda:['']*label_dim)
+feature_to_punctuations = collections.defaultdict(lambda:['']*num_labels)
 cateory_index = collections.defaultdict(int)
 for punctuation, feature in punctuation_to_feature.items():
-    idx = cateory_index[feature]
+    label = cateory_index[feature]
+    punctuation_to_label[punctuation] = label
 
-    one_hot = [0] * label_dim
-    one_hot[idx] = 1
-    punctuation_to_label[punctuation] = one_hot
-
-    feature_to_punctuations[feature][idx] = punctuation
+    feature_to_punctuations[feature][label] = punctuation
 
     cateory_index[feature]+=1
 
 
-def locate_punctuations(feature, index):
+def locate_punctuations(feature, label):
+    '''Locate the corresponding punctuation based on the feature value and index. 
+    If there is no punctuation at the indexed position, raise an IndexError exception.
+    '''
     category = feature_to_punctuations[feature]
-    try:
-        return category[index]
-    except IndexError:
-        return category[0]
+    return category[label]
 
-
-# def is_english(word):
-#     for ch in word:
-#         if not ch in string.ascii_letters:
-#             return False
-#     return True
 
 english_feature = feature_scale(ord('E'))
 digit_feature = feature_scale(ord('D'))
@@ -81,53 +72,6 @@ chinese_feature = feature_scale(ord('C'))
 # space_feature = feature_scale(ord('S'))
 punctuation_feature = feature_scale(ord('P'))
 other_feature = feature_scale(ord('O'))
-
-# def word_kind(word):
-#     if not word:
-#         return ''
-    
-#     tag = ''
-#     if is_english(word):
-#         tag = english_feature # English
-#     elif word[0] in string.digits:
-#         tag = digit_feature # digit
-#     elif '\u4e00' <= word[0] <= '\u9fff':
-#         tag = chinese_feature # Chinese
-#     elif word == ' ':
-#         tag = space_feature # space
-#     elif word in punctuation_to_feature:
-#         tag = punctuation_feature # punctuation
-#     else:
-#         tag = other_feature # Other
-#     return tag
-
-# def word_feature(words, idx):
-#     word = words[idx]
-
-#     kind = word_kind(word)
-#     if kind == punctuation_feature:
-#         return punctuation_to_feature[word]
-#     else:
-#         return kind
-
-default_label = [0]*label_dim
-
-# def text_features_labels(text):
-#     features = []
-#     labels = []
-
-#     words = jieba.lcut(text)
-#     for idx, word in enumerate(words):
-#         feature = word_feature(words, idx)
-#         features.append(feature)
-
-#         if word in punctuation_to_feature:
-#             label = punctuation_to_label[word]
-#             labels.append(label)
-#         else:
-#             labels.append(default_label)    # no care
-
-#     return features, labels
 
 
 def text_to_features_labels(text):

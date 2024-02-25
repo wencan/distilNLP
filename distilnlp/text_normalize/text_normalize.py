@@ -4,6 +4,7 @@ from typing import Union, List
 
 from .emoji import EMOJI_DICT
 from distilnlp._utils.modelfile import downloaded_model_filepath
+from distilnlp._utils.unicode import is_printable_symbol
 from .punctuation_normalize import punctuation_normalize
 
 __all__ = [
@@ -124,9 +125,9 @@ std_replace = partial(_replace, replace_table=std_replace_table)
 
 def general_normalize(text):
     '''basic normalizate for all languages.'''
-    text = map(lambda ch: '' if ch in EMOJI_DICT else ch, text) # remove emoji
+    text = filter(lambda ch: not ch in EMOJI_DICT, text) # remove emoji
     text = map(std_replace, text)
-    text = filter(lambda ch: ch.isprintable() or ch in ('\n', '\t'), text)
+    text = filter(lambda ch: is_printable_symbol(ch), text)
     text = ''.join(text)
 
     text = space_pattern.sub(' ', text)
@@ -167,18 +168,17 @@ def remove_unnecessary(text):
 
 def text_punctuation_normalize(texts):
     model_name = 'punctuation_normalize'
-    model_version = '20240207002857'
-    url = ''
+    model_version = '20240218211723'
+    url = 'https://raw.githubusercontent.com/wencan/distilNLP/150add0adb22af560591df5674101ac8ba3fe324/assets/model/punctuation_normalize/state_dict_20240218211723.pt'
     filepath = downloaded_model_filepath(model_name, model_version, url)
 
     texts = punctuation_normalize(filepath, texts)
     return texts
 
 
-def text_normalize(texts_or_text: Union[List[str], str], fix_punctuation_width: bool=True):
+def text_normalize(texts_or_text: Union[List[str], str], enable_punctuation_normalize: bool=True):
     '''Text normalization processing removes redundant characters and corrects incorrect punctuation.
-    If fix_punctuation_width is set to False, punctuation width will not be corrected. 
-    If you are sure that the widths of the punctuations in the text are correct, please set fix_punctuation_width to False.
+    If you are sure that the widths of the punctuations in the text are correct, please set enable_punctuation_normalize to False.
     '''
 
     is_str = False
@@ -191,7 +191,7 @@ def text_normalize(texts_or_text: Union[List[str], str], fix_punctuation_width: 
     texts = [general_normalize(text) for text in texts]
     texts = [remove_unnecessary(text) for text in texts]
 
-    if fix_punctuation_width:
+    if enable_punctuation_normalize:
         texts = text_punctuation_normalize(texts)
 
     if is_str:
