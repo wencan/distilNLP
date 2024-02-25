@@ -16,7 +16,7 @@ class GatedResidualBlock(torch.nn.Module):
             self.pool = torch.nn.AdaptiveAvgPool1d(output_size=pool_output_size)        
     
     def forward(self, inputs, outputs): # ((batch_size, max_length, in_channels), (batch_size, max_length, out_channels)) 
-                                        # -> (batch_size, max_length, */in_channels+out_channels)
+                                        # -> (batch_size, max_length, pool_output_size or in_channels+out_channels)
         outputs = torch.sigmoid(self.outputs_weight * outputs) * outputs
         outputs = torch.cat((inputs, outputs), dim=2)
 

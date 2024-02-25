@@ -8,6 +8,8 @@ Unlike other NLP projects that use classical machine learning techniques or fine
 At this stage, this project is only for learning and research.
 
 # Usage
+程序自动下载所需的模型文件。国内用户需要翻墙才能正常下载。  
+The program automatically downloads the required model files.
 
 ## Text Normalize
 文本正规化。  
@@ -32,5 +34,19 @@ text_normalize([
 # got: [
 #   'This is an English sentence.',
 #   '百度的网址是 http://www.baidu.com'
+# ]
+```
+
+## Chinese Tokenize
+中文分词
+```python
+from distilnlp import distilnlp
+chinese_tokenize([
+    '6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。', 
+    '人权是所有人与生俱来的权利，不分国籍、性别、宗教或任何其他身份。'
+])
+# got: [
+#   ['6', '.', ' ', '讲习班', '的', '参加者', '是', '在', '国家', '和', '区域', '应急', '机构', '和', '服务', '部门', '的', '管理', '岗位', '上', '工作', '了', '若干年', '的', '专业', '人员', '。'], 
+#   ['人权', '是', '所有', '人', '与生', '俱来', '的', '权利', '，', '不', '分', '国籍', '、', '性别', '、', '宗教', '或', '任何', '其他', '身份', '。'],
 # ]
 ```

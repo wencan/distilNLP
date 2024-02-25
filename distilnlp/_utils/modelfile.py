@@ -21,12 +21,12 @@ def cache_dir_path():
     return cache_dir
 
 
-def downloaded_model_filepath(name: str, version: str, url: str, serialize_type:Literal['state_dict']='state_dict', postfix='pt'):
+def downloaded_model_filepath(name: str, version: str, url: str, content_type:Literal['state_dict', 'vocab']='state_dict', postfix:Literal['pt', 'txt']='pt'):
     '''Return the path of the already downloaded model file. 
     If the file does not exist, download it from the specified url.'''
     cache_dir = cache_dir_path()
     model_dir = os.path.join(cache_dir, 'model', name)
-    filename = f'{serialize_type}_{version}.{postfix}'
+    filename = f'{content_type}_{version}.{postfix}'
     file_path = os.path.join(model_dir, filename)
 
     if os.path.exists(file_path):
@@ -36,9 +36,9 @@ def downloaded_model_filepath(name: str, version: str, url: str, serialize_type:
        
     # other versions
     exists_filepaths = []
-    for dir, _, filepaths in os.walk(model_dir):
-        filepaths = [os.path.join(dir, filepath) for filepath in filepaths]
-        exists_filepaths.extend(filepaths)
+    for dir, _, filenames in os.walk(model_dir):
+        filenames = [os.path.join(dir, filename) for filename in filenames if filename.startswith(content_type)]
+        exists_filepaths.extend(filenames)
     
     # download
     filename, _ = urllib.request.urlretrieve(url)
