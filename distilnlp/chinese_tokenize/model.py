@@ -71,6 +71,7 @@ class AttentionTCN(torch.nn.Module):
     _fc_pool_output_size = _tcn_1_output_size // 2
     _fc_input_size = _fc_pool_output_size
     _fc_output_size = num_labels
+    _fc_dropout = 0.1
 
     def __init__(self, 
                  attention_implementation: Literal['local-attention', 'natten'],
@@ -109,7 +110,8 @@ class AttentionTCN(torch.nn.Module):
 
         self.fc_pool = torch.nn.AdaptiveMaxPool1d(self._fc_pool_output_size)
         self.fc = torch.nn.Linear(self._fc_input_size, self._fc_output_size)
-        self.fc_layer_norm = torch.nn.LayerNorm(self._fc_output_size)
+        # self.fc_layer_norm = torch.nn.LayerNorm(self._fc_output_size)
+        self.fc_dropout = torch.nn.Dropout(self._fc_dropout)
 
     def forward(self, features_seqs):
         out = self.embedding(features_seqs)
@@ -142,7 +144,8 @@ class AttentionTCN(torch.nn.Module):
 
         out = self.fc_pool(out)
         out = self.fc(out)
-        out = self.fc_layer_norm(out)
+        # out = self.fc_layer_norm(out)
+        out =  self.fc_dropout(out)
 
         return out
 
