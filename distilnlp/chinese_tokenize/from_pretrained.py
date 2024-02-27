@@ -21,18 +21,22 @@ def embedding_from_pretained(ordered_dict: collections.OrderedDict,
                              pad_token:str = '[PAD]', unk_token:str = '[UNK]',
                              allow_decomposition:bool = True) -> tuple[collections.OrderedDict, torch.Tensor]:
     pretrained_tokenizer = tokenizer_class.from_pretrained(model_name)
+    pretrained_vocab = pretrained_tokenizer.get_vocab()
     pretrained_model = pretraining_class.from_pretrained(model_name)
-    pretrained_weight = pretrained_model.electra.embeddings.word_embeddings.weight.data
+    if isinstance(pretrained_model, transformers.ElectraForPreTraining):
+        pretrained_weight = pretrained_model.electra.embeddings.word_embeddings.weight.data
+    else:
+        raise NotImplementedError(f'{type(pretrained_model)} is not supported')
 
     filtered_dict = collections.OrderedDict()
     filtered_weight = []
     filtered_dict[pad_token] = 0 # assigned later
-    filtered_weight.append(pretrained_weight[pretrained_tokenizer.vocab[pad_token]])
+    filtered_weight.append(pretrained_weight[pretrained_vocab[pad_token]])
     filtered_dict[unk_token] = 0 # assigned later
-    filtered_weight.append(pretrained_weight[pretrained_tokenizer.vocab[unk_token]])
+    filtered_weight.append(pretrained_weight[pretrained_vocab[unk_token]])
     for s, i in ordered_dict.items():
         try:
-            idx = pretrained_tokenizer.vocab[s]
+            idx = pretrained_vocab[s]
             filtered_dict[s] = i    # origin freq
         except KeyError:
             pass
@@ -63,17 +67,17 @@ if __name__ == '__main__':
     new_vocab_filepath = args.new_vocab_filepath
     embedding_filepath = args.embedding_filepath
     min_freq = args.min_freq
-    pretained_model = 'hfl/chinese-electra-180g-small-discriminator' # no space symbol!!!
+    pretrained_model = 'hfl/chinese-electra-180g-small-discriminator' # no space symbol!!!
     tokenizer_class = transformers.ElectraTokenizer
     pretraining_class = transformers.ElectraForPreTraining
     pad_token:str = '[PAD]'
     unk_token:str = '[UNK]'
 
     ordered_dict = load_vocab(vocab_filepath)
-    print(ordered_dict)
+    print(f'original vocab: {ordered_dict}')
     
     ordered_dict, embedding_weight = embedding_from_pretained(ordered_dict, 
-                                                              pretained_model,
+                                                              pretrained_model,
                                                               tokenizer_class,
                                                               pretraining_class
                                                               )
@@ -83,10 +87,12 @@ if __name__ == '__main__':
     default_index = tokens.index(unk_token)
     padding_index = tokens.index(pad_token)
 
+    embedding_weight = embedding_weight.type(torch.get_default_dtype())
+
     save_vocab(ordered_dict, new_vocab_filepath)
     torch.save(embedding_weight, embedding_filepath)
 
-    print(f'vocab: {ordered_dict}')
+    print(f'new vocab: {ordered_dict}')
     print(f'vocab size: {len(ordered_dict)}')
     print(f'weight size: {embedding_weight.size()}')
     print(f'padding index: {padding_index}')

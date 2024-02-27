@@ -10,6 +10,11 @@ label_middle = 1
 label_tail = label_middle
 label_ignore = label_head
 
+
+def is_start_label(label):
+    return label == label_head
+
+
 def text_to_features_labels(text:str, segments:Sequence[str]):
     '''Principle: Retain all characters from the original text and only generate segmentation markers.'''
     features = []

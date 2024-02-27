@@ -1,1 +1,2 @@
 from .text_normalize import text_normalize
+from .chinese_tokenize import chinese_tokenize

@@ -39,7 +39,7 @@ def train(model:AttentionTCN,
           optimizer:Optional[torch.optim.Optimizer]=None,
           ):
     assert codec.label_pad_value == label_pad
-    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad)
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad, label_smoothing=0.1)
 
     total, total_acc = 0, 0
     losses = []
@@ -76,7 +76,7 @@ def valid(model:AttentionTCN,
           loader:torch.utils.data.DataLoader, 
           ):
     assert codec.label_pad_value == label_pad
-    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad)
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad, label_smoothing=0.1)
 
     total, total_acc = 0, 0
     losses = []
@@ -194,8 +194,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--padding_index', type=int, default=0, help='Index of padding token.')
     arg_parser.add_argument('--default_index', type=int, default=1, help='Index of unknown token.')
     arg_parser.add_argument('--min_freq', type=int, default=100, help='The minimum frequency needed to include a token in the vocabulary.')
-    arg_parser.add_argument('--embedding_filepath', help='Path to embedding weight file. The script will also attempt to look up embedding weights from the state dict. If training a new model from scratch, this is required.')
-    arg_parser.add_argument('--model_filepath', default='', help='Path to the pre-trained model file. If not provided, the script will train a new model from scratch.')
+    arg_parser.add_argument('--embedding_filepath', help='Path to embedding weight file. The script will prioritize searching for embedding weight from the state dict. If training a new model from scratch, this is required.')
     arg_parser.add_argument('--save_filedir', required=True, help='File directory to save the trained model.')
     arg_parser.add_argument('--learning_rate', type=float, default=0.005, help='Learning rate.')
     arg_parser.add_argument('--num_epochs', type=int, default=100, help='Number of epochs.')
@@ -213,7 +212,6 @@ if __name__ == '__main__':
     default_index = args.default_index
     min_freq = args.min_freq
     embedding_filepath = args.embedding_filepath
-    model_filepath = args.model_filepath
     save_filedir = args.save_filedir
     learning_rate = args.learning_rate
     num_epochs = args.num_epochs
@@ -235,14 +233,14 @@ if __name__ == '__main__':
         state_dict = torch.load(state_dict_filepath, map_location=torch.device(DEVICE))
     # load embedding
     embedding_weight = None
-    if embedding_filepath:
+    if state_dict:
+        embedding_weight = state_dict['embedding.weight']
+    if embedding_weight is None and embedding_filepath:
+        print(f'load Pretrained embedding weight.')
         with open(embedding_filepath, 'rb') as infile:
             embedding_weight = torch.load(infile, map_location=torch.device(DEVICE))
-    if embedding_weight is None and state_dict:
-        embedding_weight = state_dict['embedding.weight']
     if embedding_weight is None:
         raise ValueError('no embedding!')
-    embedding_weight = embedding_weight.type(torch.get_default_dtype())
 
     # prepare data set
     if preprocessed_total == 0:
