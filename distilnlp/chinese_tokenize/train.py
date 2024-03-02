@@ -10,8 +10,8 @@ import torch
 import torch.utils.data
 import torchtext
 
-from distilnlp._utils.data import LMDBDataSet
-from distilnlp._utils.profile import profile_trace
+from distilnlp.utils.data import LMDBDataSet
+from distilnlp.utils.profile import profile_trace
 
 from .feature import label_pad
 from .model import AttentionTCN, Codec

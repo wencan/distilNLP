@@ -7,7 +7,7 @@ import time
 
 
 from .feature import text_to_features_labels
-from distilnlp._utils.data import LMDBWriter
+from distilnlp.utils.data import LMDBWriter
 
 def handle_worker(max_text_length:int, in_queue: multiprocessing.Queue, out_queue: multiprocessing.Queue, eof_event: multiprocessing.Event):
     get_count = 0

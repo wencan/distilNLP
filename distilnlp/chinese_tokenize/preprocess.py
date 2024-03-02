@@ -5,7 +5,7 @@ import logging
 import time
 import json
 
-from distilnlp._utils.data import LMDBWriter
+from distilnlp.utils.data import LMDBWriter
 from .feature import text_to_features_labels
 
 logger = logging.getLogger(__name__)

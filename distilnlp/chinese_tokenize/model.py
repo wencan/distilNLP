@@ -6,7 +6,7 @@ import torchtext
 import torch.utils
 
 from distilnlp._thirdparty.tcn import TemporalConvNet
-from distilnlp._utils.residual import GatedResidualBlock
+from distilnlp.utils.residual import GatedResidualBlock
 
 from .feature import num_labels, label_pad
 

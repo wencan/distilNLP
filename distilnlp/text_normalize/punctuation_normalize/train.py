@@ -11,7 +11,7 @@ import tqdm
 
 from .feature import default_label
 from .model import ConvBiGRU
-from distilnlp._utils.data import LMDBDataSet, LMDBWriter
+from distilnlp.utils.data import LMDBDataSet, LMDBWriter
 
 
 logger = logging.getLogger(__name__)
