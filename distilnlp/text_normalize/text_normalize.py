@@ -3,8 +3,8 @@ from functools import partial
 from typing import Union, List
 
 from .emoji import EMOJI_DICT
-from distilnlp._utils.modelfile import downloaded_model_filepath
-from distilnlp._utils.unicode import is_printable_symbol, space_symbol, is_exceptional_symbol
+from distilnlp.utils.modelfile import downloaded_model_filepath
+from distilnlp.utils.unicode import is_printable_symbol, space_symbol, is_exceptional_symbol
 from .punctuation_normalize import load_model, punctuation_normalize
 
 __all__ = [

@@ -23,7 +23,7 @@ class Tokenizer(torch.nn.Module):
     def __init__(self, 
                  attention_implementation: Literal['local-attention', 'natten'],
                  attention_window_size:int,
-                 model_state_dict,
+                 model_state_dict:torch.tensor,
                  vocab_ordered_dict: collections.OrderedDict, 
                  padding_index:int=0,
                  default_index:int=1,
@@ -45,7 +45,7 @@ class Tokenizer(torch.nn.Module):
         self.model.to(DEVICE)
     
     def forward(self, texts:Sequence[str]):
-        input_ids_seqs, _ = self.codec.Encode(texts, device=DEVICE)
+        input_ids_seqs, _ = self.codec.encode(texts, device=DEVICE)
         logits_seqs = self.model(input_ids_seqs)
         indices_seqs = torch.argmax(logits_seqs, dim=2)
 
@@ -96,7 +96,8 @@ if __name__ == '__main__':
 
     texts = ['6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。', 
              'An implementation of local windowed attention for language modeling', 
-             '朝散大夫右諫議大夫權御史中丞充理檢使上護軍賜紫金魚袋臣司馬光奉敕編集'
+             '朝散大夫右諫議大夫權御史中丞充理檢使上護軍賜紫金魚袋臣司馬光奉敕編集',
+             'Lorber （2008）审查了美国的多溴二苯醚接触情况，审查显示就BDE-209而言，食入104.8 纳克/天的土壤/灰尘是占最大比例的接触情况，其次为通过皮肤接触土壤/灰尘（25.2 纳克/天）。',
             ]
     segments_seqs = tokenizer(texts)
     for segments in segments_seqs:

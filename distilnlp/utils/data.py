@@ -53,7 +53,7 @@ class LMDBWriter(torch.utils.data.Dataset):
 
 
 class LMDBDataSet(torch.utils.data.Dataset):
-    def __init__(self, filepath, indexes, map_size=1024*1024*1024*1024, loads=pickle.loads):
+    def __init__(self, filepath, map_size=1024*1024*1024*1024, loads=pickle.loads):
         super(LMDBDataSet, self).__init__()
         self._loads = loads
 
@@ -61,12 +61,18 @@ class LMDBDataSet(torch.utils.data.Dataset):
         self._map_size = map_size
 
         self._db = None
-        self._indexes = indexes
+
+        db = lmdb.open(filepath)
+        try:
+            self._length = db.stat()['entries']
+            self._indexes = range(self._length)
+        finally:
+            db.close()
 
         self._tx_r = None
     
     def __len__(self):
-        return len(self._indexes)
+        return self._length
     
     def __getitem__(self, idx):
         if self._db is None:

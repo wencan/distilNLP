@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from distilnlp._utils.unicode import is_printable_symbol, space_symbol, is_exceptional_symbol
+from distilnlp.utils.unicode import is_printable_symbol, space_symbol, is_exceptional_symbol
 
 num_labels = 2
 label_pad = -1

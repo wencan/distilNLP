@@ -1,7 +1,7 @@
 import torch
 
 from .feature import num_labels
-from distilnlp._utils.residual import GatedResidualBlock
+from distilnlp.utils.residual import GatedResidualBlock
 
 
 class ConvBiGRU(torch.nn.Module):

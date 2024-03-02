@@ -3,7 +3,7 @@ from typing import Sequence
 
 import torch
 
-from distilnlp._utils.modelfile import downloaded_model_filepath
+from distilnlp.utils.modelfile import downloaded_model_filepath
 from .predict import Tokenizer
 from .vocab import load_vocab
 
