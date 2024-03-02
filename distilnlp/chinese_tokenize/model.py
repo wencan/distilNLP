@@ -162,7 +162,7 @@ class Codec:
         self.feature_pad_value = feature_pad_value
         self.label_pad_value = label_pad
     
-    def Encode(self, texts:Sequence[str], 
+    def encode(self, texts:Sequence[str], 
                labels_seqs:Optional[Sequence[str]]=None, 
                device:Union[str, torch.device, int]=None,
                ) -> Union[Tuple[torch.tensor, torch.tensor, Sequence[int]], Tuple[torch.tensor, Sequence[int]]]:
@@ -225,7 +225,7 @@ if __name__ == '__main__':
               'An implementation of local windowed attention for language modeling', 
               '朝散大夫右諫議大夫權御史中丞充理檢使上護軍賜紫金魚袋臣司馬光奉敕編集'
               ]
-    inputs, _ = codec.Encode(inputs)
+    inputs, _ = codec.encode(inputs)
     outputs = model(inputs)
 
     model = AttentionTCN('natten', attention_window_size, embedding_weight, padding_index)

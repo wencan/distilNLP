@@ -27,10 +27,10 @@ DEVICE = (
 )
 
 def collate_batch(batch):
-    features_seqs = [item[0] for item in batch]
+    text_seqs = [item[0] for item in batch]
     labels_seqs =[item[1] for item in batch]
 
-    return features_seqs, labels_seqs
+    return text_seqs, labels_seqs
 
 
 def train(model:AttentionTCN, 
@@ -47,7 +47,7 @@ def train(model:AttentionTCN,
     model.train()
 
     for texts, labels_seqs in tqdm.tqdm(loader):
-        features_seqs, targets_seqs, lengths = codec.Encode(texts, labels_seqs, device=DEVICE)
+        features_seqs, targets_seqs, lengths = codec.encode(texts, labels_seqs, device=DEVICE)
 
         optimizer.zero_grad()
         logits_seqs = model(features_seqs) # -> (batch_size, max_length, num_labels)
@@ -84,7 +84,7 @@ def valid(model:AttentionTCN,
     model.eval()
     with torch.no_grad():
         for texts, labels_seqs in tqdm.tqdm(loader):
-            features_seqs, targets_seqs, lengths = codec.Encode(texts, labels_seqs, device=DEVICE)
+            features_seqs, targets_seqs, lengths = codec.encode(texts, labels_seqs, device=DEVICE)
 
             logits_seqs = model(features_seqs) # -> (batch_size, max_length, num_labels)
 
@@ -115,6 +115,7 @@ def cross_train_valid(model:AttentionTCN,
                       batch_size:int, 
                       learning_rate:float, 
                       num_epochs:int, 
+                      num_workers: int,
                       lowest_lr:float = 0.000001,
                       ):
     valid_ratio = min(0.1, 100000/len(data_indexes))
@@ -128,7 +129,7 @@ def cross_train_valid(model:AttentionTCN,
         train_indexes, valid_indexes = torch.utils.data.random_split(data_indexes, [train_ratio, valid_ratio])
         train_set = LMDBDataSet(preprocessed_path, train_indexes)
         valid_set = LMDBDataSet(preprocessed_path, valid_indexes)
-        train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=True, collate_fn=collate_batch)
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_batch)
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
         if epoch == 0:
@@ -199,6 +200,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--learning_rate', type=float, default=0.005, help='Learning rate.')
     arg_parser.add_argument('--num_epochs', type=int, default=100, help='Number of epochs.')
     arg_parser.add_argument('--batch_size', type=int, default=1024, help='Batch size.')
+    arg_parser.add_argument('--num_workers', type=int, default=0, help='The number of worker subprocesses. 0 indicates the use of only the main process.')
     args = arg_parser.parse_args()
 
     attention_implementation: Literal['local-attention', 'natten'] = args.attention_implementation
@@ -216,6 +218,7 @@ if __name__ == '__main__':
     learning_rate = args.learning_rate
     num_epochs = args.num_epochs
     batch_size = args.batch_size
+    num_workers = args.num_workers
 
     log(f'PyTorch Version: {torch.__version__}')
     log(f'CUDA Version: {torch.version.cuda}')
@@ -270,7 +273,7 @@ if __name__ == '__main__':
         test_acc, test_loss = valid(model, codec, test_loader)
         log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
 
-    cross_train_valid(model, codec, preprocessed_path, train_valid_indexes, batch_size, learning_rate, num_epochs)
+    cross_train_valid(model, codec, preprocessed_path, train_valid_indexes, batch_size, learning_rate, num_epochs, num_workers)
 
     test_acc, test_loss = valid(model, codec, test_loader)
     log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
