@@ -95,8 +95,8 @@ def valid(model, loader):
         return total_acc/total, total_loss/total
 
 
-def cross_train_valid(model, preprocessed_path, data_indexes, batch_size, learning_rate, num_epochs, lowest_lr = 0.000001):
-    valid_ratio = min(0.1, 100000/len(data_indexes))
+def cross_train_valid(model, train_valid_set, batch_size, learning_rate, num_epochs, lowest_lr = 0.000001):
+    valid_ratio = min(0.1, 100000/len(train_valid_set))
     train_ratio = 1 - valid_ratio
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -104,9 +104,7 @@ def cross_train_valid(model, preprocessed_path, data_indexes, batch_size, learni
     lowest_loss_train = None
 
     for epoch in range(num_epochs):
-        train_indexes, valid_indexes = torch.utils.data.random_split(data_indexes, [train_ratio, valid_ratio])
-        train_set = LMDBDataSet(preprocessed_path, train_indexes)
-        valid_set = LMDBDataSet(preprocessed_path, valid_indexes)
+        train_set, valid_set = torch.utils.data.random_split(train_valid_set, [train_ratio, valid_ratio])
         train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=True, collate_fn=collate_batch)
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
@@ -160,7 +158,6 @@ if __name__ == '__main__':
 
     arg_parser = argparse.ArgumentParser(description='train punctuation normalize model.')
     arg_parser.add_argument('--preprocessed_path', required=True, help='Path to the preprocessed file.')
-    arg_parser.add_argument('--preprocessed_total', type=int, required=True, help='The total number of preprocessed data.')
     arg_parser.add_argument('--model_filepath', default='', help='Path to the pre-trained model file. If not provided, the script will train a new model from scratch.')
     arg_parser.add_argument('--save_filedir', required=True, help='File directory to save the trained model.')
     arg_parser.add_argument('--learning_rate', type=float, default=0.005, help='Learning rate.')
@@ -169,7 +166,6 @@ if __name__ == '__main__':
     args = arg_parser.parse_args()
 
     preprocessed_path = args.preprocessed_path
-    preprocessed_total = args.preprocessed_total
     model_filepath = args.model_filepath
     save_filedir = args.save_filedir
     learning_rate = args.learning_rate
@@ -181,12 +177,12 @@ if __name__ == '__main__':
     log(f"Using {DEVICE} device")
 
     # prepare data set
-    data_indexes = range(preprocessed_total)
-    test_ratio = min(0.1, 100000/preprocessed_total)
+    data_set = LMDBDataSet(preprocessed_path)
+    test_ratio = min(0.1, 100000/len(data_set))
     train_valid_ratio = 1 - test_ratio
 
-    train_valid_indexes, test_indexes = torch.utils.data.random_split(data_indexes, [train_valid_ratio, test_ratio])
-    log(f'train and valid: {len(train_valid_indexes)}, test: {len(test_indexes)}')
+    train_valid_set, test_set = torch.utils.data.random_split(data_set, [train_valid_ratio, test_ratio])
+    log(f'train and valid: {len(train_valid_set)}, test: {len(test_set)}')
 
     # train
     model = ConvBiGRU()
@@ -198,13 +194,12 @@ if __name__ == '__main__':
     log(model)
     log(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
-    test_set = LMDBDataSet(preprocessed_path, test_indexes)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size, shuffle=True, collate_fn=collate_batch)
     if model_filepath:
         acc_test, loss_test = valid(model, test_loader)
         log(f'test accuracy: {acc_test:.6f} test loss: {loss_test:.6f}')
 
-    cross_train_valid(model, preprocessed_path, train_valid_indexes, batch_size, learning_rate, num_epochs)
+    cross_train_valid(model, train_valid_set, batch_size, learning_rate, num_epochs)
 
     acc_test, loss_test = valid(model, test_loader)
     log(f'test accuracy: {acc_test:.6f} test loss: {loss_test:.6f}')

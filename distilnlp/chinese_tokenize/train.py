@@ -110,15 +110,14 @@ valid_with_profile = profile_trace(valid, print_fn=log)
 
 def cross_train_valid(model:AttentionTCN,
                       codec:Codec, 
-                      preprocessed_path:str, 
-                      data_indexes:Sequence[int], 
+                      train_valid_set: torch.utils.data.Dataset, 
                       batch_size:int, 
                       learning_rate:float, 
                       num_epochs:int, 
                       num_workers: int,
                       lowest_lr:float = 0.000001,
                       ):
-    valid_ratio = min(0.1, 100000/len(data_indexes))
+    valid_ratio = min(0.1, 100000/len(train_valid_set))
     train_ratio = 1 - valid_ratio
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -126,9 +125,7 @@ def cross_train_valid(model:AttentionTCN,
     lowest_loss_train = None
 
     for epoch in range(num_epochs):
-        train_indexes, valid_indexes = torch.utils.data.random_split(data_indexes, [train_ratio, valid_ratio])
-        train_set = LMDBDataSet(preprocessed_path, train_indexes)
-        valid_set = LMDBDataSet(preprocessed_path, valid_indexes)
+        train_set, valid_set = torch.utils.data.random_split(train_valid_set, [train_ratio, valid_ratio])
         train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_batch)
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
@@ -189,7 +186,6 @@ if __name__ == '__main__':
     arg_parser.add_argument('--attention_implementation', default='local-attention', help='Implementation of Attention Mechanisms. Options: local-attention and natten.')
     arg_parser.add_argument('--attention_window_size', type=int, default=3, help='Size of attention window.')
     arg_parser.add_argument('--preprocessed_path', required=True, help='Path to the preprocessed file.')
-    arg_parser.add_argument('--preprocessed_total', type=int, default=0, help='The total number of preprocessed data. If not provided, the script will attempt to search from the directory specified by preprocessed_path.')
     arg_parser.add_argument('--state_dict_filepath', default='', help='The file path of the state dict of the pre-trained model. If not provided, the script will train a new model from scratch.')
     arg_parser.add_argument('--vocab_filepath', help='Path to vocab dict. If training a new model from scratch, this is required.')
     arg_parser.add_argument('--padding_index', type=int, default=0, help='Index of padding token.')
@@ -207,7 +203,6 @@ if __name__ == '__main__':
     attention_window_size = args.attention_window_size
 
     preprocessed_path = args.preprocessed_path
-    preprocessed_total = args.preprocessed_total
     state_dict_filepath = args.state_dict_filepath
     vocab_filepath = args.vocab_filepath
     padding_index = args.padding_index
@@ -246,15 +241,12 @@ if __name__ == '__main__':
         raise ValueError('no embedding!')
 
     # prepare data set
-    if preprocessed_total == 0:
-        with open(os.path.join(preprocessed_path, 'total.txt')) as infile:
-            preprocessed_total = int(infile.readline())
-    data_indexes = range(preprocessed_total)
-    test_ratio = min(0.1, 100000/preprocessed_total)
+    dataset = LMDBDataSet(preprocessed_path)
+    test_ratio = min(0.1, 100000/len(dataset))
     train_valid_ratio = 1 - test_ratio
 
-    train_valid_indexes, test_indexes = torch.utils.data.random_split(data_indexes, [train_valid_ratio, test_ratio])
-    log(f'train and valid: {len(train_valid_indexes)}, test: {len(test_indexes)}')
+    train_valid_set, test_set = torch.utils.data.random_split(dataset, [train_valid_ratio, test_ratio])
+    log(f'train and valid: {len(train_valid_set)}, test: {len(test_set)}')
 
     # load model
     codec = Codec(vocab, attention_window_size, padding_index)
@@ -267,13 +259,12 @@ if __name__ == '__main__':
     print(model)
     print(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
-    test_set = LMDBDataSet(preprocessed_path, test_indexes)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size, shuffle=True, collate_fn=collate_batch)
     if not state_dict is None:
         test_acc, test_loss = valid(model, codec, test_loader)
         log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
 
-    cross_train_valid(model, codec, preprocessed_path, train_valid_indexes, batch_size, learning_rate, num_epochs, num_workers)
+    cross_train_valid(model, codec, train_valid_set, batch_size, learning_rate, num_epochs, num_workers)
 
     test_acc, test_loss = valid(model, codec, test_loader)
     log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
