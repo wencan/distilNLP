@@ -6,7 +6,7 @@ from typing import Optional
 
 import tqdm
 
-from distilnlp._utils.unicode import is_printable_symbol
+from distilnlp.utils.unicode import is_printable_symbol
 
 
 def save_vocab(vocab: collections.OrderedDict, filepath: str):

@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 
-from distilnlp._utils.unicode import is_printable_symbol
+from distilnlp.utils.unicode import is_printable_symbol
 
 class TestUnicode(TestCase):
     def test_is_printable_symbol(self):

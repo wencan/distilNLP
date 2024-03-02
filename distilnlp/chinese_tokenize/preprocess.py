@@ -5,7 +5,7 @@ import logging
 import time
 import json
 
-from distilnlp._utils.data import LMDBWriter
+from distilnlp.utils.data import LMDBWriter
 from .feature import text_to_features_labels
 
 logger = logging.getLogger(__name__)
@@ -48,16 +48,17 @@ if __name__ == '__main__':
             line_no =0
             with open(text_filepath) as textfile:
                 with open(segmented_filepath) as segmentedfile:
-                    for text in textfile:
+                    for idx, text in enumerate(textfile):
+                        text = text.strip()
                         line_no +=1
                         line = segmentedfile.readline()
                         length = len(text)
                         if length == 0:
                             continue
 
-                        if length >= max_length:
+                        if max_length and length >= max_length:
                             continue
-                        if length < min_length:
+                        if min_length and length < min_length:
                             continue
 
                         if length < 30:
@@ -70,13 +71,15 @@ if __name__ == '__main__':
                         except json.decoder.JSONDecodeError as e:
                             raise ValueError(f'cannot load json [{line}], line no: {line_no}, text: [{text}]') from e
 
+                        if len(segments) == 0:  # ignored
+                            continue
                         if len(segments) > length*9//10:
                             # low quality
                             continue
 
                         try:
                             features, labels = text_to_features_labels(text, segments)
-                        except ValueError as e:
+                        except (ValueError, IndexError) as e:
                             log(f'skip line no: [{line_no}], text: [{text}], segments: [{segments}], exception: {e}')
                             continue
                         writer.add((features, labels))
