@@ -49,6 +49,7 @@ class TestData(TestCase):
             with LMDBBucketWriter(tmpdir, bucket_fn) as writer:
                 for num in range(100):
                     writer.add(num)
+                assert len(writer) == 100, len(writer)
             for idx in range(10):
                 bucket = str(idx)
                 path = os.path.join(tmpdir, bucket)

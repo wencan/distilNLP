@@ -10,7 +10,7 @@ import torch
 import torch.utils.data
 import torchtext
 
-from distilnlp.utils.data import LMDBDataSet
+from distilnlp.utils.data import ConcatLMDBDataSet
 from distilnlp.utils.profile import profile_trace
 
 from .feature import label_pad
@@ -108,12 +108,25 @@ train_with_profile = profile_trace(train, print_fn=log)
 valid_with_profile = profile_trace(valid, print_fn=log)
 
 
+def save_checkpoint(model, epoch:int, checkpoint:int, save_filedir:str, additional_text:str):
+    if not os.path.exists(save_filedir):
+        os.mkdir(save_filedir)
+    version = f'{time.strftime("%Y%m%d%H%M%S", time.localtime())}_{epoch+1}_{checkpoint+1}'
+    torch.save(model.state_dict(), os.path.join(save_filedir, f'''chinese_tokenize_state_dict_{version}.pt'''))
+    txt_filepath = os.path.join(save_filedir, f'chinese_tokenize_state_dict_{version}.txt')
+    with open(txt_filepath, 'w') as outfile:
+        outfile.write(str(model)+'\n')
+        if additional_text:
+            outfile.write(additional_text)
+
+
 def cross_train_valid(model:AttentionTCN,
                       codec:Codec, 
                       train_valid_set: torch.utils.data.Dataset, 
                       batch_size:int, 
                       learning_rate:float, 
                       num_epochs:int, 
+                      checkpoint_interval:int,
                       num_workers: int,
                       lowest_lr:float = 0.000001,
                       ):
@@ -122,53 +135,55 @@ def cross_train_valid(model:AttentionTCN,
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     best_model_state = None
-    lowest_loss_train = None
+    lowest_train_loss = None
 
     for epoch in range(num_epochs):
         train_set, valid_set = torch.utils.data.random_split(train_valid_set, [train_ratio, valid_ratio])
-        train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_batch)
-        valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
 
-        if epoch == 0:
-            train_acc, train_loss = train_with_profile(model, codec, train_loader, optimizer)
-        else:
-            train_acc, train_loss= train(model, codec, train_loader, optimizer)
-        log(f'Epoch {epoch+1} train accuracy: {train_acc:.8f}, train loss: {train_loss:.8f}')
+        train_length =len(train_set)
+        if checkpoint_interval == 0 or checkpoint_interval > train_length:
+            checkpoint_interval = train_length
+        checkpoint_lengths = [checkpoint_interval] * (train_length // checkpoint_interval)
+        remain = train_length - sum(checkpoint_lengths)
+        if remain:
+            checkpoint_lengths.append(remain)
+        assert sum(checkpoint_lengths) == train_length
+        checkpoint_sets = torch.utils.data.random_split(train_set, checkpoint_lengths)
+
+        # train
+        for checkpoint, checkpoint_set in enumerate(checkpoint_sets):
+            checkpoint_loader = torch.utils.data.DataLoader(checkpoint_set, batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_batch)
+            if epoch == 0 and checkpoint == 0:
+                train_acc, train_loss = train_with_profile(model, codec, checkpoint_loader, optimizer)
+            else:
+                train_acc, train_loss= train(model, codec, checkpoint_loader, optimizer)
+
+            message = f'Epoch {epoch+1} checkpoint {checkpoint+1} train accuracy: {train_acc:.8f}, train loss: {train_loss:.8f}'
+            log(message)
+            save_checkpoint(model, epoch, checkpoint, save_filedir, message)
+
+            if lowest_train_loss is None or lowest_train_loss > train_loss:
+                # best state
+                lowest_train_loss = train_loss
+                best_model_state = model.state_dict()
+            if lowest_train_loss is not None and lowest_train_loss < train_loss:
+                # reset model
+                model.load_state_dict(best_model_state)
+                # reduce learning rate
+                learning_rate = learning_rate * 0.5
+                if learning_rate < lowest_lr:
+                    log(f'Finish early.')
+                    return
+                optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+                log(f'Update learning rate: {learning_rate}')
         
+        # valid
+        valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
         if epoch == 0:
             valid_acc , valid_loss= valid_with_profile(model, codec, valid_loader)
         else:
             valid_acc , valid_loss= valid(model, codec, valid_loader)
         log(f'Epoch {epoch+1} valid accuracy: {valid_acc:.8f}, valid loss: {valid_loss:.8f}')
-
-        latest_model_state = model.state_dict()
-        
-        # save model state
-        if not os.path.exists(save_filedir):
-            os.mkdir(save_filedir)
-        version = f'{time.strftime("%Y%m%d%H%M%S", time.localtime())}_{epoch+1}'
-        torch.save(latest_model_state, os.path.join(save_filedir, f'''chinese_tokenize_state_dict_{version}.pt'''))
-        txt_filepath = os.path.join(save_filedir, f'chinese_tokenize_state_dict_{version}.txt')
-        with open(txt_filepath, 'w') as outfile:
-            outfile.write(str(model)+'\n')
-            outfile.write(f'valid accuracy: {valid_acc:.6f} valid loss: {valid_loss:.6f}')
-
-        if lowest_loss_train is None or lowest_loss_train > train_loss:
-            # best state
-            lowest_loss_train = train_loss
-            best_model_state = latest_model_state
-        if lowest_loss_train is not None and lowest_loss_train < train_loss:
-            # reset model
-            model.load_state_dict(best_model_state)
-            # reduce learning rate
-            learning_rate = learning_rate * 0.5
-            if learning_rate < lowest_lr:
-                log(f'Finish early.')
-                break
-            optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-            log(f'Update learning rate: {learning_rate}')
-        
-        del latest_model_state
 
 
 if __name__ == '__main__':
@@ -195,7 +210,8 @@ if __name__ == '__main__':
     arg_parser.add_argument('--save_filedir', required=True, help='File directory to save the trained model.')
     arg_parser.add_argument('--learning_rate', type=float, default=0.005, help='Learning rate.')
     arg_parser.add_argument('--num_epochs', type=int, default=100, help='Number of epochs.')
-    arg_parser.add_argument('--batch_size', type=int, default=1024, help='Batch size.')
+    arg_parser.add_argument('--batch_size', type=int, default=1024, help='Number of samples per batch.')
+    arg_parser.add_argument('--checkpoint_interval', type=int, default=0, help='Save a checkpoint every how many samples. Default is all train samples.')
     arg_parser.add_argument('--num_workers', type=int, default=0, help='The number of worker subprocesses. 0 indicates the use of only the main process.')
     args = arg_parser.parse_args()
 
@@ -213,6 +229,7 @@ if __name__ == '__main__':
     learning_rate = args.learning_rate
     num_epochs = args.num_epochs
     batch_size = args.batch_size
+    checkpoint_interval = args.checkpoint_interval
     num_workers = args.num_workers
 
     log(f'PyTorch Version: {torch.__version__}')
@@ -241,7 +258,7 @@ if __name__ == '__main__':
         raise ValueError('no embedding!')
 
     # prepare data set
-    dataset = LMDBDataSet(preprocessed_path)
+    dataset = ConcatLMDBDataSet(preprocessed_path)
     test_ratio = min(0.1, 100000/len(dataset))
     train_valid_ratio = 1 - test_ratio
 
@@ -264,7 +281,7 @@ if __name__ == '__main__':
         test_acc, test_loss = valid(model, codec, test_loader)
         log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
 
-    cross_train_valid(model, codec, train_valid_set, batch_size, learning_rate, num_epochs, num_workers)
+    cross_train_valid(model, codec, train_valid_set, batch_size, learning_rate, num_epochs, checkpoint_interval, num_workers)
 
     test_acc, test_loss = valid(model, codec, test_loader)
     log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')

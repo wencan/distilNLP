@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import List, Iterator, Callable, Any
+from typing import List, Iterator, Callable, Any, Sequence, Union
 from collections import defaultdict
 
 import torch
@@ -42,10 +42,6 @@ class LMDBWriter:
                 tx_x.put(key, item)
 
                 self._max_index +=1
-    
-    def get_indexes(self):
-        indexes = list(range(self._max_index))
-        return indexes 
 
     def close(self):
         if self._db:
@@ -68,6 +64,9 @@ class LMDBBucketWriter:
                 raise OSError('The directory is not empty.')
         else:
             os.mkdir(path)
+
+    def __len__(self):
+        return sum([len(writer) for writer in self._writers.values()])
 
     def __enter__(self):
         return self
@@ -104,18 +103,18 @@ class LMDBBucketWriter:
         
 
 class LMDBDataSet(torch.utils.data.Dataset):
-    def __init__(self, path, map_size=1024*1024*1024*1024, loads=pickle.loads):
+    def __init__(self, path, loads=pickle.loads):
         super(LMDBDataSet, self).__init__()
         self._loads = loads
 
         self._path = path
-        self._map_size = map_size
 
         self._db = None
 
-        db = lmdb.open(path)
+        db = lmdb.open(path, readonly=True)
         try:
             self._length = db.stat()['entries']
+            self._map_size = db.info()['map_size']
             self._indexes = range(self._length)
         finally:
             db.close()
@@ -144,6 +143,15 @@ class LMDBDataSet(torch.utils.data.Dataset):
             self._tx_r.commit()
         if self._db:
             self._db.close()
+
+
+class ConcatLMDBDataSet(torch.utils.data.ConcatDataset):
+    def __init__(self, paths: Union[str, Sequence[str]], loads=pickle.loads) -> None:
+        if isinstance(paths, str):
+            paths = [os.path.join(paths, path) for path in os.listdir(paths)]
+            paths = filter(lambda path: os.path.isdir(path), paths)
+        datasets = [LMDBDataSet(path, loads) for path in paths]
+        super().__init__(datasets)
 
 
 class BucketSampler(torch.utils.data.Sampler[List[int]]):
