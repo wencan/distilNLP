@@ -20,7 +20,7 @@ class TestData(TestCase):
     def test_bucket_sampler(self):
         total = 10000
         numbers = list(range(total))
-        bucket_lengths = [100, 3, 1300, 2400, 0, 200, 10, 3000, 2900, 87]
+        bucket_lengths = [100, 3, 1300, 2400, 0, 196, 14, 3000, 2900, 87]
         assert sum(bucket_lengths) == total
 
         buckets = []
