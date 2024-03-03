@@ -1,10 +1,11 @@
-import random
+import tempfile
+import os
 from unittest import TestCase, main
 
 import torch.utils.data
 
 from distilnlp.utils.unicode import is_printable_symbol
-from distilnlp.utils.data import BucketSampler
+from distilnlp.utils.data import BucketSampler, LMDBBucketWriter, LMDBDataSet
 
 class TestUnicode(TestCase):
     def test_is_printable_symbol(self):
@@ -39,6 +40,22 @@ class TestData(TestCase):
         loaded = [num for nums in loader for num in nums]
         self.assertEqual(total, len(loaded))
         self.assertEqual(numbers, sorted(loaded))
+    
+    def test_lmdb_bucket_writer(self):
+        def bucket_fn(item):
+            return str(item//10)
+
+        with tempfile.TemporaryDirectory(prefix='.test_lmdb_bucket_writer_', dir='.') as tmpdir:
+            with LMDBBucketWriter(tmpdir, bucket_fn) as writer:
+                for num in range(100):
+                    writer.add(num)
+            for idx in range(10):
+                bucket = str(idx)
+                path = os.path.join(tmpdir, bucket)
+                dataset = LMDBDataSet(path)
+                numbers = list(dataset)
+                self.assertEqual(numbers, [idx*10+i for i in range(10)])
+
 
 if __name__ == '__main__':
     main()

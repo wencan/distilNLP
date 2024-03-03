@@ -1,21 +1,21 @@
 import os
 import shutil
-from typing import List, Sized, Iterator
+from typing import List, Iterator, Callable, Any
+from collections import defaultdict
 
 import torch
 import torch.utils.data
 import pickle
 import lmdb
 
-class LMDBWriter(torch.utils.data.Dataset):
-    def __init__(self, dir_path, map_size=1024*1024*1024*1024, sync=True, dumps=pickle.dumps):
-        super(LMDBWriter, self).__init__()
+class LMDBWriter:
+    def __init__(self, path, map_size=1024*1024*1024*1024, sync=True, dumps=pickle.dumps):
         self._dumps = dumps
 
-        if os.path.exists(dir_path):
-            shutil.rmtree(dir_path)
+        if os.path.exists(path) and os.listdir(path):
+            raise OSError('The directory is not empty.')
 
-        self._db = lmdb.open(dir_path, map_size=map_size, sync=sync)
+        self._db = lmdb.open(path, map_size=map_size, sync=sync)
 
         self._max_index = 0
 
@@ -54,17 +54,66 @@ class LMDBWriter(torch.utils.data.Dataset):
             self._db = None
 
 
+class LMDBBucketWriter:
+    def __init__(self, path, bucket_fn:Callable[[Any], str], map_size=1024*1024*1024*1024, sync=True, dumps=pickle.dumps):
+        self._path = path
+        self._bucket_fn = bucket_fn
+        self._map_size = map_size
+        self._sync = sync
+        self._dumps = dumps
+        self._writers = dict() # name -> env
+
+        if os.path.exists(path):
+            if os.listdir(path):
+                raise OSError('The directory is not empty.')
+        else:
+            os.mkdir(path)
+
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *exc):
+        self.close()
+        return False
+    
+    def _get_writer(self, bucket:str):
+        try:
+            return self._writers[bucket]
+        except KeyError:
+            path = os.path.join(self._path, bucket)
+            writer = LMDBWriter(path, map_size=self._map_size, sync=self._sync, dumps=self._dumps)
+            self._writers[bucket] = writer
+            return writer
+
+    def add(self, item):
+        self.add_batch((item, ))
+
+    def add_batch(self, items):
+        groups = defaultdict(list)
+        for item in items:
+            bucket = self._bucket_fn(item)
+            groups[bucket].append(item)
+        for bucket, members in groups.items():
+            writer = self._get_writer(bucket)
+            writer.add_batch(members)
+    
+    def close(self):
+        for writer in self._writers.values():
+            writer.close()
+        self._writers = dict()
+        
+
 class LMDBDataSet(torch.utils.data.Dataset):
-    def __init__(self, filepath, map_size=1024*1024*1024*1024, loads=pickle.loads):
+    def __init__(self, path, map_size=1024*1024*1024*1024, loads=pickle.loads):
         super(LMDBDataSet, self).__init__()
         self._loads = loads
 
-        self._filepath = filepath
+        self._path = path
         self._map_size = map_size
 
         self._db = None
 
-        db = lmdb.open(filepath)
+        db = lmdb.open(path)
         try:
             self._length = db.stat()['entries']
             self._indexes = range(self._length)
@@ -78,7 +127,7 @@ class LMDBDataSet(torch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         if self._db is None:
-            self._db = lmdb.open(self._filepath, map_size=self._map_size, readonly=True)
+            self._db = lmdb.open(self._path, map_size=self._map_size, readonly=True)
         if self._tx_r is None:
             self._tx_r = self._db.begin()
 
@@ -149,9 +198,6 @@ class BucketSampler(torch.utils.data.Sampler[List[int]]):
                 except StopIteration:
                     if idx > 0 and not self._drop_last:
                         yield indices[:idx]
-
-                    # samplers = samplers[:bucket_indice] + samplers[bucket_indice+1:]
-                    # probabilities = torch.cat((probabilities[:bucket_indice], probabilities[bucket_indice+1:]))
                     break
 
                 if idx == self._batch_size:
