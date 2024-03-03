@@ -1,7 +1,9 @@
 import os
 import shutil
+from typing import List, Sized, Iterator
 
 import torch
+import torch.utils.data
 import pickle
 import lmdb
 
@@ -93,3 +95,65 @@ class LMDBDataSet(torch.utils.data.Dataset):
             self._tx_r.commit()
         if self._db:
             self._db.close()
+
+
+class BucketSampler(torch.utils.data.Sampler[List[int]]):
+    '''
+    Implementation of batch_sampler.
+    BucketSampler ensures that each batch of data comes from the same bucket.
+    '''
+    def __init__(self, buckets: torch.utils.data.ConcatDataset, batch_size: int, drop_last: bool):
+        super().__init__()
+
+        self._batch_size = batch_size
+        self._drop_last = drop_last
+
+        self._cumulative_sizes = buckets.cumulative_sizes
+        self._lengths = []
+        self._cumulative_offsets = []
+        for idx, cumulative_size in enumerate(self._cumulative_sizes):
+            if idx == 0:
+                self._cumulative_offsets.append(0)
+                self._lengths.append(cumulative_size)
+            else:
+                self._cumulative_offsets.append(self._cumulative_sizes[idx-1])
+                self._lengths.append(cumulative_size - self._cumulative_sizes[idx-1])
+        self._total = sum(self._lengths)
+
+    def __len__(self) -> int:
+        if self._drop_last:
+            return sum([length//self._batch_size for length in self._lengths])
+        else:
+            return sum([(length+self._batch_size-1)//self._batch_size for length in self._lengths])
+    
+    def __iter__(self) -> Iterator[int]:
+        probabilities = torch.tensor(self._lengths, dtype=torch.float)
+        samplers = [iter(torch.randperm(length)) for length in self._lengths]
+        remain = self._total
+
+        while remain > 0:
+            bucket_indice = torch.multinomial(probabilities, 
+                                              num_samples=1, 
+                                              replacement=False
+                                              )
+            offset = self._cumulative_offsets[bucket_indice]
+            sampler = samplers[bucket_indice]
+
+            indices = [0] * self._batch_size
+            idx = 0
+            while True:
+                try:
+                    indices[idx] = offset + next(sampler)
+                    idx+=1
+                    remain -= 1
+                except StopIteration:
+                    if idx > 0 and not self._drop_last:
+                        yield indices[:idx]
+
+                    # samplers = samplers[:bucket_indice] + samplers[bucket_indice+1:]
+                    # probabilities = torch.cat((probabilities[:bucket_indice], probabilities[bucket_indice+1:]))
+                    break
+
+                if idx == self._batch_size:
+                    yield indices
+                    break
