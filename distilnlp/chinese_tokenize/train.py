@@ -4,6 +4,7 @@ import argparse
 import sys
 import os.path
 from typing import Optional, Sequence, Literal, Callable
+from datetime import datetime
 
 import tqdm
 import torch
@@ -180,6 +181,7 @@ def cross_train_valid(model:AttentionTCN,
 
 if __name__ == '__main__':
     logging.basicConfig(handlers=[
+        logging.FileHandler(f'logs/{datetime.now().isoformat()}.log', mode='w'),
         logging.StreamHandler(sys.stdout),
     ], format='%(asctime)s %(process)d %(filename)s:%(lineno)d %(message)s')
     logger = logging.getLogger()
@@ -232,7 +234,7 @@ if __name__ == '__main__':
     ordered_dict = load_vocab(vocab_filepath)
     vocab = torchtext.vocab.vocab(ordered_dict, min_freq)
     vocab.set_default_index(default_index)
-    print(f'vocab size: {len(vocab)}')
+    log(f'vocab size: {len(vocab)}')
 
     # load state dict
     state_dict = None
@@ -243,7 +245,7 @@ if __name__ == '__main__':
     if state_dict:
         embedding_weight = state_dict['embedding.weight']
     if embedding_weight is None and embedding_filepath:
-        print(f'load Pretrained embedding weight.')
+        log(f'load Pretrained embedding weight.')
         with open(embedding_filepath, 'rb') as infile:
             embedding_weight = torch.load(infile, map_location=torch.device(DEVICE))
     if embedding_weight is None:
@@ -265,8 +267,8 @@ if __name__ == '__main__':
     else:
         log('train a new model from scratch.')
     model.to(DEVICE)
-    print(model)
-    print(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
+    log(model)
+    log(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
     def collate_batch(batch):
         text_seqs = [item[0] for item in batch]
