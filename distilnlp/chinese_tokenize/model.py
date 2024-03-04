@@ -164,6 +164,7 @@ class Codec:
     
     def encode(self, texts:Sequence[str], 
                labels_seqs:Optional[Sequence[str]]=None, 
+               return_tensor:bool=True,
                device:Union[str, torch.device, int]=None,
                ) -> Union[Tuple[torch.tensor, torch.tensor, Sequence[int]], Tuple[torch.tensor, Sequence[int]]]:
         lengths = torch.tensor([len(text) for text in texts])
@@ -179,10 +180,13 @@ class Codec:
         targets_seqs = []
         features_seqs = [self.vocab.lookup_indices(list(text)) for text in texts]
         features_seqs = [features + [self.feature_pad_value]*(padded_length - lengths[idx]) for idx, features in enumerate(features_seqs)]
-        features_seqs = torch.tensor(features_seqs, device=device) # Optimized for memory allocation
         if labels_seqs:
             targets_seqs = [labels + [self.label_pad_value]*(padded_length - lengths[idx]) for idx, labels in enumerate(labels_seqs)]
-            targets_seqs = torch.tensor(targets_seqs, device=device) # Optimized for memory allocation
+
+        if return_tensor:
+            features_seqs = torch.tensor(features_seqs, device=device)
+            if labels_seqs:
+                targets_seqs = torch.tensor(targets_seqs, device=device)
 
         if labels_seqs:
             return features_seqs, targets_seqs, lengths
