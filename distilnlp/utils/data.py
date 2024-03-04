@@ -1,12 +1,23 @@
 import os
 import shutil
 from typing import List, Iterator, Callable, Any, Sequence, Union
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 
 import torch
 import torch.utils.data
 import pickle
 import lmdb
+
+__all__ = [
+    'LMDBWriter',
+    'LMDBBucketWriter',
+    'LMDBNamedWriter',
+    'LMDBDataSet',
+    'ConcatLMDBDataSet',
+    'LMDBNamedDataSet',
+    'BucketSampler',
+]
+
 
 class LMDBWriter:
     def __init__(self, path, map_size=1024*1024*1024*1024, sync=True, dumps=pickle.dumps):
@@ -48,6 +59,44 @@ class LMDBWriter:
             self._db.sync()
             self._db.close()
             self._db = None
+
+
+class LMDBDataSet(torch.utils.data.Dataset):
+    def __init__(self, path, loads=pickle.loads):
+        super(LMDBDataSet, self).__init__()
+        self._loads = loads
+
+        self._path = path
+
+        self._db = None
+
+        db = lmdb.open(path, readonly=True)
+        try:
+            self._length = db.stat()['entries']
+            self._map_size = db.info()['map_size']
+        finally:
+            db.close()
+    
+    def __len__(self):
+        return self._length
+    
+    def __getitem__(self, index):
+        if self._db is None:
+            self._db = lmdb.open(self._path, map_size=self._map_size, readonly=True)
+
+        key = pickle.dumps(index)
+        with self._db.begin() as tx_r:
+            value = tx_r.get(key)
+        if value is None:
+            raise IndexError()
+
+        if self._loads:
+            value = self._loads(value)
+        return value
+    
+    def close(self):
+        if self._db:
+            self._db.close()
 
 
 class LMDBBucketWriter:
@@ -100,49 +149,6 @@ class LMDBBucketWriter:
         for writer in self._writers.values():
             writer.close()
         self._writers = dict()
-        
-
-class LMDBDataSet(torch.utils.data.Dataset):
-    def __init__(self, path, loads=pickle.loads):
-        super(LMDBDataSet, self).__init__()
-        self._loads = loads
-
-        self._path = path
-
-        self._db = None
-
-        db = lmdb.open(path, readonly=True)
-        try:
-            self._length = db.stat()['entries']
-            self._map_size = db.info()['map_size']
-            self._indexes = range(self._length)
-        finally:
-            db.close()
-
-        self._tx_r = None
-    
-    def __len__(self):
-        return self._length
-    
-    def __getitem__(self, idx):
-        if self._db is None:
-            self._db = lmdb.open(self._path, map_size=self._map_size, readonly=True)
-        if self._tx_r is None:
-            self._tx_r = self._db.begin()
-
-        index = self._indexes[idx]
-        key = pickle.dumps(index)
-        value = self._tx_r.get(key)
-
-        if self._loads:
-            value = self._loads(value)
-        return value
-    
-    def close(self):
-        if self._tx_r:
-            self._tx_r.commit()
-        if self._db:
-            self._db.close()
 
 
 class ConcatLMDBDataSet(torch.utils.data.ConcatDataset):
@@ -152,6 +158,148 @@ class ConcatLMDBDataSet(torch.utils.data.ConcatDataset):
             paths = filter(lambda path: os.path.isdir(path), paths)
         datasets = [LMDBDataSet(path, loads) for path in paths]
         super().__init__(datasets)
+
+
+dbstat = namedtuple('dbstat', ('dbname', 'entries'))
+__lmdb_dbs_stat_key__ = pickle.dumps('__imdb_metadata_dbs_stat__')
+
+
+class LMDBNamedWriter:
+    def __init__(self, path, map_size=1024*1024*1024*1024, sync=True, max_dbs=128, dumps=pickle.dumps):
+        self._dumps = dumps
+
+        if os.path.exists(path) and os.listdir(path):
+            raise OSError('The directory is not empty.')
+
+        self._db = lmdb.open(path, map_size=map_size, sync=sync, max_dbs=max_dbs)
+        self._dbs = dict()
+        self._max_index = defaultdict(int) # dbname -> max_index
+
+    def __len__(self):
+        return sum(self._max_index.values())
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *exc):
+        self.close()
+        return False
+    
+    def _open_named_db(self, dbname: str):
+        try:
+            return self._dbs[dbname]
+        except KeyError:
+            db = self._db.open_db(dbname.encode())
+            self._dbs[dbname] = db
+            return db
+    
+    def add(self, dbname, item):
+        self.add_batch(dbname, (item, ))
+
+    def add_batch(self, dbname:str, items):
+        # If sync=False, don’t flush system buffers to disk when committing a transaction.
+
+        db = self._open_named_db(dbname)
+
+        with self._db.begin(db=db, write=True) as tx_x:
+            for item in items:
+                key = pickle.dumps(self._max_index[dbname])
+                if self._dumps:
+                    item = self._dumps(item)
+                tx_x.put(key, item)
+
+                self._max_index[dbname] +=1
+    
+    def dbs_stat(self) -> List[dbstat]:
+        stats = [dbstat(dbname, max_index) for dbname, max_index in self._max_index.items()]
+        stats = sorted(stats, key=lambda stat: stat.dbname)
+        return stats
+
+    def close(self):
+        with self._db.begin(write=True) as tx_x:
+            value = pickle.dumps(self.dbs_stat())
+            tx_x.put(__lmdb_dbs_stat_key__, value)
+
+        if self._db:
+            self._db.sync()
+            self._db.close()
+            self._db = None
+
+
+class _LMDBDNamedReader:
+    def __init__(self, path, loads=pickle.loads):
+        self._loads = loads
+
+        self._path = path
+
+        self._db = None
+        self._dbs = dict()
+        self._dbs_stat = []
+
+        db = lmdb.open(path, readonly=True)
+        try:
+            self._map_size = db.info()['map_size']
+
+            with db.begin() as tx_r:
+                dbs_stat = tx_r.get(__lmdb_dbs_stat_key__)
+                if dbs_stat is not None:
+                    self._dbs_stat = pickle.loads(dbs_stat)
+        finally:
+            db.close()
+
+    def __len__(self):
+        return self._length
+    
+    def _open_named_db(self, dbname: str):
+        try:
+            return self._dbs[dbname]
+        except KeyError:
+            db = self._db.open_db(dbname.encode())
+            self._dbs[dbname] = db
+            return db
+    
+    def get(self, dbname:str, index:int):
+        if self._db is None:
+            self._db = lmdb.open(self._path, map_size=self._map_size, readonly=True, max_dbs=len(self._dbs_stat))
+
+        db = self._open_named_db(dbname)
+        key = pickle.dumps(index)
+        with self._db.begin(db=db) as tx_r:
+            value = tx_r.get(key, db=db)
+        if value is None:
+            raise IndexError()
+
+        if self._loads:
+            value = self._loads(value)
+        return value
+
+    def dbs_stat(self) -> List[dbstat]:
+        return self._dbs_stat
+
+    def close(self):
+        if self._tx_r:
+            self._tx_r.commit()
+        if self._db:
+            self._db.close()
+
+
+class _LMDBNamedDBReader(torch.utils.data.Dataset):
+    def __init__(self, base: _LMDBDNamedReader, dbstat: dbstat):
+        self._base = base
+        self._dbstat = dbstat
+    
+    def __len__(self):
+        return self._dbstat.entries
+    
+    def __getitem__(self, index):
+        return self._base.get(self._dbstat.dbname, index)
+
+
+class LMDBNamedDataSet(torch.utils.data.ConcatDataset):
+    def __init__(self, path: str):
+        base = _LMDBDNamedReader(path)
+        dbs = [_LMDBNamedDBReader(base, dbstat) for dbstat in base.dbs_stat()]
+        super().__init__(dbs)
 
 
 class BucketSampler(torch.utils.data.Sampler[List[int]]):

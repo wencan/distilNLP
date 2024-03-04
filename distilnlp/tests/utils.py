@@ -5,7 +5,7 @@ from unittest import TestCase, main
 import torch.utils.data
 
 from distilnlp.utils.unicode import is_printable_symbol
-from distilnlp.utils.data import BucketSampler, LMDBBucketWriter, LMDBDataSet
+from distilnlp.utils.data import BucketSampler, LMDBBucketWriter, LMDBDataSet, LMDBNamedWriter, LMDBNamedDataSet
 
 class TestUnicode(TestCase):
     def test_is_printable_symbol(self):
@@ -57,6 +57,19 @@ class TestData(TestCase):
                 numbers = list(dataset)
                 self.assertEqual(numbers, [idx*10+i for i in range(10)])
 
+    def test_lmdb_named(self):
+        with tempfile.TemporaryDirectory(prefix='.test_lmdb_named_', dir='.') as tmpdir:
+            with LMDBNamedWriter(tmpdir) as writer:
+                for num in range(100):
+                    dbname = str(num//10)
+                    writer.add(dbname, num)
+                dbs_stat = writer.dbs_stat()
+                self.assertEqual(len(dbs_stat), 10)
+                self.assertEqual(len(writer), 100)
+            dataset = LMDBNamedDataSet(tmpdir)
+            self.assertEqual(len(dataset), 100)
+            self.assertEqual(list(dataset), list(range(100)))
+                
 
 if __name__ == '__main__':
     main()
