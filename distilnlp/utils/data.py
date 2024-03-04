@@ -100,9 +100,8 @@ class LMDBDataSet(torch.utils.data.Dataset):
 
 
 class LMDBBucketWriter:
-    def __init__(self, path, bucket_fn:Callable[[Any], str], map_size=1024*1024*1024*1024, sync=True, dumps=pickle.dumps):
+    def __init__(self, path, map_size=1024*1024*1024*1024, sync=True, dumps=pickle.dumps):
         self._path = path
-        self._bucket_fn = bucket_fn
         self._map_size = map_size
         self._sync = sync
         self._dumps = dumps
@@ -133,17 +132,12 @@ class LMDBBucketWriter:
             self._writers[bucket] = writer
             return writer
 
-    def add(self, item):
-        self.add_batch((item, ))
+    def add(self, bucket:str, item):
+        self.add_batch(bucket, (item, ))
 
-    def add_batch(self, items):
-        groups = defaultdict(list)
-        for item in items:
-            bucket = self._bucket_fn(item)
-            groups[bucket].append(item)
-        for bucket, members in groups.items():
-            writer = self._get_writer(bucket)
-            writer.add_batch(members)
+    def add_batch(self, bucket:str, items):
+        writer = self._get_writer(bucket)
+        writer.add_batch(items)
     
     def close(self):
         for writer in self._writers.values():
@@ -193,7 +187,7 @@ class LMDBNamedWriter:
             self._dbs[dbname] = db
             return db
     
-    def add(self, dbname, item):
+    def add(self, dbname:str, item):
         self.add_batch(dbname, (item, ))
 
     def add_batch(self, dbname:str, items):

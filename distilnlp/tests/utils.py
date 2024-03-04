@@ -42,13 +42,11 @@ class TestData(TestCase):
         self.assertEqual(numbers, sorted(loaded))
     
     def test_lmdb_bucket_writer(self):
-        def bucket_fn(item):
-            return str(item//10)
-
         with tempfile.TemporaryDirectory(prefix='.test_lmdb_bucket_writer_', dir='.') as tmpdir:
-            with LMDBBucketWriter(tmpdir, bucket_fn) as writer:
+            with LMDBBucketWriter(tmpdir) as writer:
                 for num in range(100):
-                    writer.add(num)
+                    bucket = str(num//10)
+                    writer.add(bucket, num)
                 assert len(writer) == 100, len(writer)
             for idx in range(10):
                 bucket = str(idx)
