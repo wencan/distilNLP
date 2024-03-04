@@ -150,7 +150,7 @@ def cross_train_valid(model:AttentionTCN,
             else:
                 train_acc, train_loss= train(model, checkpoint_loader, optimizer)
 
-            message = f'Epoch {epoch+1} checkpoint {checkpoint+1}/{len(checkpoint_set)} train accuracy: {train_acc:.8f}, train loss: {train_loss:.8f}'
+            message = f'Epoch {epoch+1} checkpoint {checkpoint+1}/{len(checkpoint_sets)} train accuracy: {train_acc:.8f}, train loss: {train_loss:.8f}'
             log(message)
             save_checkpoint(model, epoch, checkpoint, save_filedir, message)
 
