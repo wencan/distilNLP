@@ -10,6 +10,7 @@ import tqdm
 import torch
 import torch.utils.data
 import torchtext
+from accelerate import Accelerator
 
 from distilnlp.utils.data import ConcatLMDBDataSet
 from distilnlp.utils.profile import profile_trace
@@ -21,27 +22,24 @@ from .vocab import load_vocab
 logger = logging.getLogger(__name__)
 log = logger.info
 
-DEVICE = (
-    "cuda" if torch.cuda.is_available()
-    # else "mps" if torch.backends.mps.is_available()
-    else "cpu"
-)
 
-
-def train(model:AttentionTCN, 
+def train(accelerator: Accelerator,
+          model:AttentionTCN, 
           loader:torch.utils.data.DataLoader, 
-          optimizer:Optional[torch.optim.Optimizer]=None,
+          optimizer:Optional[torch.optim.Optimizer],
           ):
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad, label_smoothing=0.1)
 
     total, total_acc = 0, 0
     losses = []
 
+    model, loader, optimizer = accelerator.prepare(model, loader, optimizer)
+    device = accelerator.device
     model.train()
 
     for features_seqs, targets_seqs, lengths in tqdm.tqdm(loader):
-        features_seqs = torch.tensor(features_seqs, device=DEVICE)
-        targets_seqs = torch.tensor(targets_seqs, device=DEVICE)
+        features_seqs = torch.tensor(features_seqs, device=device)
+        targets_seqs = torch.tensor(targets_seqs, device=device)
 
         optimizer.zero_grad()
         logits_seqs = model(features_seqs) # -> (batch_size, max_length, num_labels)
@@ -51,7 +49,8 @@ def train(model:AttentionTCN,
         loss = loss_fn(weights, targets_seqs)
         losses.append(loss.item())
 
-        loss.backward()
+        # loss.backward()
+        accelerator.backward(loss)
         optimizer.step()
 
         # accuracy
@@ -65,7 +64,8 @@ def train(model:AttentionTCN,
     return total_acc/total, sum(losses)/len(losses)
 
 
-def valid(model:AttentionTCN, 
+def valid(accelerator: Accelerator,
+          model:AttentionTCN, 
           loader:torch.utils.data.DataLoader, 
           ):
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=label_pad, label_smoothing=0.1)
@@ -73,11 +73,13 @@ def valid(model:AttentionTCN,
     total, total_acc = 0, 0
     losses = []
 
+    model, loader = accelerator.prepare(model, loader)
+    device = accelerator.device
     model.eval()
     with torch.no_grad():
         for features_seqs, targets_seqs, lengths in tqdm.tqdm(loader):
-            features_seqs = torch.tensor(features_seqs, device=DEVICE)
-            targets_seqs = torch.tensor(targets_seqs, device=DEVICE)
+            features_seqs = torch.tensor(features_seqs, device=device)
+            targets_seqs = torch.tensor(targets_seqs, device=device)
 
             logits_seqs = model(features_seqs) # -> (batch_size, max_length, num_labels)
 
@@ -113,7 +115,8 @@ def save_checkpoint(model, epoch:int, checkpoint:int, save_filedir:str, addition
             outfile.write(additional_text)
 
 
-def cross_train_valid(model:AttentionTCN,
+def cross_train_valid(accelerator: Accelerator,
+                      model:AttentionTCN,
                       collate_batch:Callable, 
                       train_valid_set: torch.utils.data.Dataset, 
                       batch_size:int, 
@@ -147,14 +150,15 @@ def cross_train_valid(model:AttentionTCN,
         for checkpoint, checkpoint_set in enumerate(checkpoint_sets):
             checkpoint_loader = torch.utils.data.DataLoader(checkpoint_set, batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_batch)
             if epoch == 0 and checkpoint == 0:
-                train_acc, train_loss = train_with_profile(model, checkpoint_loader, optimizer)
+                train_acc, train_loss = train_with_profile(accelerator, model, checkpoint_loader, optimizer)
             else:
-                train_acc, train_loss= train(model, checkpoint_loader, optimizer)
+                train_acc, train_loss= train(accelerator, model, checkpoint_loader, optimizer)
 
             message = f'Epoch {epoch+1} checkpoint {checkpoint+1}/{len(checkpoint_sets)} train accuracy: {train_acc:.8f}, train loss: {train_loss:.8f}'
             log(message)
             save_checkpoint(model, epoch, checkpoint, save_filedir, message)
 
+            accelerator.wait_for_everyone()
             if lowest_train_loss is None or lowest_train_loss > train_loss:
                 # best state
                 lowest_train_loss = train_loss
@@ -173,9 +177,9 @@ def cross_train_valid(model:AttentionTCN,
         # valid
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
         if epoch == 0:
-            valid_acc , valid_loss= valid_with_profile(model, valid_loader)
+            valid_acc , valid_loss= valid_with_profile(accelerator, model, valid_loader)
         else:
-            valid_acc , valid_loss= valid(model, valid_loader)
+            valid_acc , valid_loss= valid(accelerator, model, valid_loader)
         log(f'Epoch {epoch+1} valid accuracy: {valid_acc:.8f}, valid loss: {valid_loss:.8f}')
 
 
@@ -226,9 +230,12 @@ if __name__ == '__main__':
     checkpoint_interval = args.checkpoint_interval
     num_workers = args.num_workers
 
+    accelerator = Accelerator()
+    device = accelerator.device
+
     log(f'PyTorch Version: {torch.__version__}')
     log(f'CUDA Version: {torch.version.cuda}')
-    log(f"Using {DEVICE} device")
+    log(f"Using {device} device")
 
     # load vocab
     ordered_dict = load_vocab(vocab_filepath)
@@ -239,7 +246,7 @@ if __name__ == '__main__':
     # load state dict
     state_dict = None
     if state_dict_filepath:
-        state_dict = torch.load(state_dict_filepath, map_location=torch.device(DEVICE))
+        state_dict = torch.load(state_dict_filepath, map_location=device)
     # load embedding
     embedding_weight = None
     if state_dict:
@@ -247,7 +254,7 @@ if __name__ == '__main__':
     if embedding_weight is None and embedding_filepath:
         log(f'load Pretrained embedding weight.')
         with open(embedding_filepath, 'rb') as infile:
-            embedding_weight = torch.load(infile, map_location=torch.device(DEVICE))
+            embedding_weight = torch.load(infile, map_location=device)
     if embedding_weight is None:
         raise ValueError('no embedding!')
 
@@ -266,7 +273,6 @@ if __name__ == '__main__':
         model.load_state_dict(state_dict)
     else:
         log('train a new model from scratch.')
-    model.to(DEVICE)
     log(model)
     log(f'Total number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
@@ -278,10 +284,10 @@ if __name__ == '__main__':
 
     test_loader = torch.utils.data.DataLoader(test_set, batch_size, shuffle=True, collate_fn=collate_batch)
     if not state_dict is None:
-        test_acc, test_loss = valid(model, test_loader)
+        test_acc, test_loss = valid(accelerator, model, test_loader)
         log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
 
-    cross_train_valid(model, collate_batch, train_valid_set, batch_size, learning_rate, num_epochs, checkpoint_interval, num_workers)
+    cross_train_valid(accelerator, model, collate_batch, train_valid_set, batch_size, learning_rate, num_epochs, checkpoint_interval, num_workers)
 
-    test_acc, test_loss = valid(model, collate_batch, test_loader)
+    test_acc, test_loss = valid(accelerator, model, test_loader)
     log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
