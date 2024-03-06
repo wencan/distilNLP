@@ -52,19 +52,20 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
     
     return attention
 
-class AttentionTCN(torch.nn.Module):    
+class AttentionTCN(torch.nn.Module):
     _attention_num_heads = 8
     _attention_dropout = 0.1
 
-    _tcn_0_output_size = 128
-    _tcn_0_num_channels = [128, _tcn_0_output_size]
+    _width = 256
+    _tcn_0_output_size = _width
+    _tcn_0_num_channels = [_width, _width, _tcn_0_output_size]
     _tcn_0_kernel_size = 2
     _tcn_0_dropout = 0.1
 
     # inverted
     _tcn_1_input_size = _tcn_0_output_size
-    _tcn_1_output_size = 128
-    _tcn_1_num_channels = [128, _tcn_0_output_size]
+    _tcn_1_output_size = _width
+    _tcn_1_num_channels = [_width, _width, _tcn_0_output_size]
     _tcn_1_kernel_size = 2
     _tcn_1_dropout = 0.1
 
@@ -95,6 +96,7 @@ class AttentionTCN(torch.nn.Module):
         self.attention_dropout = torch.nn.Dropout(self._attention_dropout)
 
         self._tcn_0_input_size = self._attention_dim
+        self.tcn_0_input_pool = torch.nn.AdaptiveMaxPool1d(self._tcn_0_input_size) # (embedding out, attention out) -> 
         self.tcn_0 = TemporalConvNet(self._tcn_0_input_size, self._tcn_0_num_channels, self._tcn_0_kernel_size, self._tcn_0_dropout)
         self.tcn_0_res_block = GatedResidualBlock('max', self._tcn_0_output_size)
         self.tcn_0_layer_norm = torch.nn.LayerNorm(self._tcn_0_output_size)
@@ -108,13 +110,14 @@ class AttentionTCN(torch.nn.Module):
         self.tcn_1_gelu = torch.nn.GELU()
         self.tcn_1_dropout = torch.nn.Dropout(self._tcn_1_dropout)
 
-        self.fc_pool = torch.nn.AdaptiveMaxPool1d(self._fc_pool_output_size)
+        self.fc_input_pool = torch.nn.AdaptiveMaxPool1d(self._fc_pool_output_size)
         self.fc = torch.nn.Linear(self._fc_input_size, self._fc_output_size)
         # self.fc_layer_norm = torch.nn.LayerNorm(self._fc_output_size)
         self.fc_dropout = torch.nn.Dropout(self._fc_dropout)
 
     def forward(self, features_seqs):
         out = self.embedding(features_seqs)
+        embedding_out = out.clone()
 
         out = self.attention(out)
         out = self.attention_layer_norm(out)
@@ -123,6 +126,8 @@ class AttentionTCN(torch.nn.Module):
         attention_copy1 = out.clone()
         attention_copy2 = out.clone()
 
+        out = torch.cat((embedding_out, out), dim=2)
+        out = self.tcn_0_input_pool(out)
         out = out.transpose(1, 2)
         out = self.tcn_0(out) # (batch_size, *, max_length) -> (batch_size, *, max_length)
         out = out.transpose(1, 2)
@@ -142,7 +147,7 @@ class AttentionTCN(torch.nn.Module):
         out = self.tcn_1_gelu(out)
         out = self.tcn_1_dropout(out)
 
-        out = self.fc_pool(out)
+        out = self.fc_input_pool(out)
         out = self.fc(out)
         # out = self.fc_layer_norm(out)
         out =  self.fc_dropout(out)
@@ -227,7 +232,7 @@ if __name__ == '__main__':
     # test
     inputs = ['6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。', 
               'An implementation of local windowed attention for language modeling', 
-              '朝散大夫右諫議大夫權御史中丞充理檢使上護軍賜紫金魚袋臣司馬光奉敕編集'
+              '朝散大夫右諫議大夫權御史中丞充理檢使上護軍賜紫金魚袋臣司馬光奉敕編集',
               ]
     inputs, _ = codec.encode(inputs)
     outputs = model(inputs)
