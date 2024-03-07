@@ -1,9 +1,9 @@
-# From: https://github.com/lucidrains/local-attention/blob/master/local_attention/rotary.py
+# Original Version: https://github.com/lucidrains/local-attention/blob/master/local_attention/rotary.py
+# Edited Version: https://github.com/wencan/local-attention/blob/master/local_attention/rotary.py
 
 import torch
 from torch import nn, einsum
 
-from einops import rearrange
 
 def exists(val):
     return val is not None
@@ -40,13 +40,13 @@ class SinusoidalEmbeddings(nn.Module):
             return freqs, torch.ones(1, device = device)
 
         power = (t - (seq_len // 2)) / self.scale_base
-        scale = self.scale ** rearrange(power, 'n -> n 1')
+        scale = self.scale ** power.unsqueeze(-1)
         scale = torch.cat((scale, scale), dim = -1)
 
         return freqs, scale
 
 def rotate_half(x):
-    x = rearrange(x, 'b ... (r d) -> b ... r d', r = 2)
+    x = x.unflatten(-1, (2, -1))
     x1, x2 = x.unbind(dim = -2)
     return torch.cat((-x2, x1), dim = -1)
 
