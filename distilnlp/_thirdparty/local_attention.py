@@ -8,7 +8,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 
 
-from local_attention.rotary import SinusoidalEmbeddings, apply_rotary_pos_emb
+from .rotary import SinusoidalEmbeddings, apply_rotary_pos_emb
 
 # constant
 
