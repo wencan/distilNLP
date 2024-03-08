@@ -124,15 +124,12 @@ def cross_train_valid(accelerator: Accelerator,
                       num_epochs:int, 
                       checkpoint_interval:int,
                       num_workers: int,
-                      disable_lr_scheduler: bool = False,
-                      lowest_lr:float = 0.000001,
                       ):
     valid_ratio = min(0.1, 100000/len(train_valid_set))
     train_ratio = 1 - valid_ratio
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    best_model_state = None
-    lowest_train_loss = None
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=1)
 
     for epoch in range(num_epochs):
         train_set, valid_set = torch.utils.data.random_split(train_valid_set, [train_ratio, valid_ratio])
@@ -159,22 +156,10 @@ def cross_train_valid(accelerator: Accelerator,
             log(message)
             save_checkpoint(model, epoch, checkpoint, save_filedir, message)
 
-            if not disable_lr_scheduler:
-                accelerator.wait_for_everyone()
-                if lowest_train_loss is None or lowest_train_loss > train_loss:
-                    # best state
-                    lowest_train_loss = train_loss
-                    best_model_state = model.state_dict()
-                if lowest_train_loss is not None and lowest_train_loss < train_loss:
-                    # reset model
-                    model.load_state_dict(best_model_state)
-                    # reduce learning rate
-                    learning_rate = learning_rate * 0.5
-                    if learning_rate < lowest_lr:
-                        log(f'Finish early.')
-                        return
-                    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-                    log(f'Update learning rate: {learning_rate}')
+            lr_scheduler.step(train_loss)
+            if learning_rate != lr_scheduler.get_last_lr()[0]:
+                learning_rate = lr_scheduler.get_last_lr()[0]
+                log(f'Update learning rate: {learning_rate}')
         
         # valid
         valid_loader = torch.utils.data.DataLoader(valid_set, batch_size, shuffle=True, collate_fn=collate_batch)
@@ -213,7 +198,6 @@ if __name__ == '__main__':
     arg_parser.add_argument('--batch_size', type=int, default=1024, help='Number of samples per batch.')
     arg_parser.add_argument('--checkpoint_interval', type=int, default=0, help='Save a checkpoint every how many samples. Default is all train samples.')
     arg_parser.add_argument('--num_workers', type=int, default=0, help='The number of worker subprocesses. 0 indicates the use of only the main process.')
-    arg_parser.add_argument('--disable_lr_scheduler', type=bool, default=False, help='Disable learning rate scheduler.')
     args = arg_parser.parse_args()
 
     attention_implementation: Literal['local-attention', 'natten'] = args.attention_implementation
@@ -232,7 +216,6 @@ if __name__ == '__main__':
     batch_size = args.batch_size
     checkpoint_interval = args.checkpoint_interval
     num_workers = args.num_workers
-    disable_lr_scheduler = args.disable_lr_scheduler
 
     accelerator = Accelerator()
     device = accelerator.device
@@ -291,7 +274,7 @@ if __name__ == '__main__':
         test_acc, test_loss = valid(accelerator, model, test_loader)
         log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
 
-    cross_train_valid(accelerator, model, collate_batch, train_valid_set, batch_size, learning_rate, num_epochs, checkpoint_interval, num_workers, disable_lr_scheduler)
+    cross_train_valid(accelerator, model, collate_batch, train_valid_set, batch_size, learning_rate, num_epochs, checkpoint_interval, num_workers)
 
     test_acc, test_loss = valid(accelerator, model, test_loader)
     log(f'test accuracy: {test_acc:.6f} test loss: {test_loss:.6f}')
