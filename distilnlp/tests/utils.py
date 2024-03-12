@@ -5,7 +5,8 @@ from unittest import TestCase, main
 import torch.utils.data
 
 from distilnlp.utils.unicode import is_printable_symbol
-from distilnlp.utils.data import BucketSampler, LMDBBucketWriter, LMDBDataSet, LMDBNamedWriter, LMDBNamedDataSet
+from distilnlp.utils.data import BucketSampler, LMDBBucketWriter, LMDBDataSet, LMDBNamedWriter, LMDBNamedDataSet, concat_random_split
+
 
 class TestUnicode(TestCase):
     def test_is_printable_symbol(self):
@@ -16,6 +17,7 @@ class TestUnicode(TestCase):
         s = '🅰️插层剥离制备原子薄层材料的机理'
         ch = s[1]
         self.assertEqual(is_printable_symbol(ch), False)
+
 
 class TestData(TestCase):
     def test_bucket_sampler(self):
@@ -67,7 +69,31 @@ class TestData(TestCase):
             dataset = LMDBNamedDataSet(tmpdir)
             self.assertEqual(len(dataset), 100)
             self.assertEqual(list(dataset), list(range(100)))
-                
+    
+    def test_concat_random_split_0(self):
+        dataset = torch.utils.data.ConcatDataset([list(range(100*n, 100*(n+1))) for n in range(10)])
+        datasets = concat_random_split(dataset, [0.3, 0.1, 0.6])
+        self.assertEqual(len(dataset), sum([len(ds) for ds in datasets]))
+        for dataset in datasets:
+            for subset in dataset.datasets:
+                self.assertEqual(len(set([num//100 for num in subset])), 1, list(subset))
+    
+    def test_concat_random_split_1(self):
+        dataset = torch.utils.data.ConcatDataset([list(range(100*n, 100*(n+1))) for n in range(10)])
+        datasets = concat_random_split(dataset, [31, 9, 60])
+        self.assertEqual(len(dataset), sum([len(ds) for ds in datasets]))
+        for dataset in datasets:
+            for subset in dataset.datasets:
+                self.assertEqual(len(set([num//100 for num in subset])), 1, list(subset))
+    
+    def test_concat_random_split_2(self):
+        dataset = torch.utils.data.ConcatDataset([list(range(100*n, 100*(n+1))) for n in range(10)])
+        datasets = concat_random_split(dataset, [31, 9, 60])
+        datasets = concat_random_split(datasets[-1], [31, 9, 20])
+        for dataset in datasets:
+            for subset in dataset.datasets:
+                self.assertEqual(len(set([num//100 for num in subset])), 1, list(subset))
+
 
 if __name__ == '__main__':
     main()

@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import List, Iterator, Callable, Any, Sequence, Union
+from typing import List, Iterator, Callable, Any, Sequence, Union, Optional
 from collections import defaultdict, namedtuple
 
 import torch
@@ -154,6 +154,23 @@ class ConcatLMDBDataSet(torch.utils.data.ConcatDataset):
         super().__init__(datasets)
 
 
+def concat_random_split(concat_dataset:torch.utils.data.ConcatDataset, 
+                        lengths: Sequence[Union[int, float]],
+                        generator: Optional[torch.Generator] = torch.default_generator) -> List[torch.utils.data.ConcatDataset]:
+    def shuffle(x):
+        shuffled_indices = torch.randperm(len(x), generator=generator)
+        return [x[i] for i in shuffled_indices]
+    
+    if sum(lengths) > 1:
+        total = sum(lengths)
+        lengths = [length/total for length in lengths[:-1]]
+        lengths.append(1 - sum(lengths))
+
+    splited = [torch.utils.data.random_split(dataset, lengths, generator) for dataset in concat_dataset.datasets]
+    datasets = [torch.utils.data.ConcatDataset(shuffle(datasets)) for datasets in list(zip(*splited))]
+    return datasets
+
+
 dbstat = namedtuple('dbstat', ('dbname', 'entries'))
 __lmdb_dbs_stat_key__ = pickle.dumps('__imdb_metadata_dbs_stat__')
 
@@ -304,8 +321,8 @@ class BucketSampler(torch.utils.data.Sampler[List[int]]):
     def __init__(self, buckets: torch.utils.data.ConcatDataset, batch_size: int, drop_last: bool):
         super().__init__()
 
-        self._batch_size = batch_size
-        self._drop_last = drop_last
+        self.batch_size = batch_size
+        self.drop_last = drop_last
 
         self._cumulative_sizes = buckets.cumulative_sizes
         self._lengths = []
@@ -320,10 +337,10 @@ class BucketSampler(torch.utils.data.Sampler[List[int]]):
         self._total = sum(self._lengths)
 
     def __len__(self) -> int:
-        if self._drop_last:
-            return sum([length//self._batch_size for length in self._lengths])
+        if self.drop_last:
+            return sum([length//self.batch_size for length in self._lengths])
         else:
-            return sum([(length+self._batch_size-1)//self._batch_size for length in self._lengths])
+            return sum([(length+self.batch_size-1)//self.batch_size for length in self._lengths])
     
     def __iter__(self) -> Iterator[int]:
         probabilities = torch.tensor(self._lengths, dtype=torch.float)
@@ -338,7 +355,7 @@ class BucketSampler(torch.utils.data.Sampler[List[int]]):
             offset = self._cumulative_offsets[bucket_indice]
             sampler = samplers[bucket_indice]
 
-            indices = [0] * self._batch_size
+            indices = [0] * self.batch_size
             idx = 0
             while True:
                 try:
@@ -346,10 +363,10 @@ class BucketSampler(torch.utils.data.Sampler[List[int]]):
                     idx+=1
                     remain -= 1
                 except StopIteration:
-                    if idx > 0 and not self._drop_last:
+                    if idx > 0 and not self.drop_last:
                         yield indices[:idx]
                     break
 
-                if idx == self._batch_size:
+                if idx == self.batch_size:
                     yield indices
                     break
