@@ -1,18 +1,20 @@
-import collections
+import math
+import array
 from typing import Literal, Union, Sequence, Optional, Tuple
 
 import torch
 import torchtext
 import torch.utils
+from torch.nn.utils.parametrizations import weight_norm
 
 from distilnlp._thirdparty.tcn import TemporalConvNet
-from distilnlp.utils.residual import GatedResidualBlock
+from distilnlp.utils.residual import GatedResidualNet
 
 from .feature import num_labels, label_pad
 
 
 def new_attention(implementation: Literal['local-attention', 'natten'],
-                  dim, num_heads, window_size):
+                  dim, num_heads, window_size, dropout=0.2):
     '''local attention or windowed attention'''
     if implementation == 'natten':
         # https://shi-labs.com/natten/
@@ -26,13 +28,13 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
         from distilnlp._thirdparty.local_attention import LocalAttention
 
         class MultiHeadLocalAttention(torch.nn.Module):
-            def __init__(self, dim, num_heads, window_size, **kwargs):
+            def __init__(self, dim, num_heads, window_size, dropout=0.1, ):
                 super(MultiHeadLocalAttention, self).__init__()
                 self.num_heads = num_heads
                 self.dim_head = dim // num_heads
                 
                 self.qkv = torch.nn.Linear(dim, dim*3)
-                self.attention = LocalAttention(dim=self.dim_head, window_size=window_size, **kwargs)
+                self.attention = LocalAttention(dim=self.dim_head, window_size=window_size, dropout=dropout)
             
             def forward(self, x, **kwargs): # (batch_size, max_length, dim) -> (batch_size, max_length, dim) 
                 batch_size = x.size(0)
@@ -52,105 +54,125 @@ def new_attention(implementation: Literal['local-attention', 'natten'],
     
     return attention
 
+
+def FeedForward(input_size, output_size, dropout=0.2):
+    return torch.nn.Sequential(
+        weight_norm(torch.nn.Linear(input_size, output_size)),
+        torch.nn.LayerNorm(output_size),
+        torch.nn.GELU(),
+        torch.nn.Dropout(dropout),
+    )
+
+class TCN(TemporalConvNet):
+    def __init__(self, num_inputs, num_channels, kernel_size=2, dropout=0.2):
+        super(TCN, self).__init__(num_inputs, num_channels, kernel_size, dropout)
+
+    def forward(self, x):
+        x = x.transpose(-2, -1)
+        out = super(TCN, self).forward(x)
+        out = out.transpose(-2, -1)
+        return out
+
+
 class AttentionTCN(torch.nn.Module):
+    _input_dropout = 0.1
+
+    _attention_stack_depth = 3
+    _attention_dim = 256
     _attention_num_heads = 8
     _attention_dropout = 0.1
 
-    _width = 256
-    _tcn_0_output_size = _width
-    _tcn_0_num_channels = [_width, _width, _tcn_0_output_size]
-    _tcn_0_kernel_size = 2
-    _tcn_0_dropout = 0.1
+    _tcn_stack_depth = 3
+    _tcn_dim = 256
+    _tcn_kernel_size = 2
+    _tcn_dropout = 0.1
 
-    # inverted
-    _tcn_1_input_size = _tcn_0_output_size
-    _tcn_1_output_size = _width
-    _tcn_1_num_channels = [_width, _width, _tcn_0_output_size]
-    _tcn_1_kernel_size = 2
-    _tcn_1_dropout = 0.1
-
-    _fc_pool_output_size = _tcn_1_output_size // 2
-    _fc_input_size = _fc_pool_output_size
     _fc_output_size = num_labels
     _fc_dropout = 0.1
 
     def __init__(self, 
                  attention_implementation: Literal['local-attention', 'natten'],
                  attention_window_size:int,
-                 embedding_weight:torch.tensor,
-                 pad_idx:int,
+                 embedding: torch.nn.Embedding,
                  ):
         super(AttentionTCN, self).__init__()
+        self.embedding = embedding
 
+        if self.embedding.embedding_dim != self._attention_dim:
+            self.input = FeedForward(self.embedding.embedding_dim, self._attention_dim, self._input_dropout)
+        else:
+            self.input = torch.nn.Identity()
+
+        self.attention = GatedResidualNet(torch.nn.Sequential(*[GatedResidualNet(torch.nn.Sequential(
+            new_attention(attention_implementation, 
+                        dim=self._attention_dim, 
+                        num_heads=self._attention_num_heads, 
+                        window_size=attention_window_size,
+                        dropout=self._attention_dropout,
+                        ),
+            FeedForward(self._attention_dim, self._attention_dim, self._attention_dropout)
+        ), 'attention', 'max', self._attention_dim) for _ in range(self._attention_stack_depth)]), 
+        'attentions', 'max', self._attention_dim)
+
+        self.forward_tcn = GatedResidualNet(torch.nn.Sequential(
+            TCN(self._tcn_dim, [self._tcn_dim]*self._tcn_stack_depth, self._tcn_kernel_size, self._tcn_dropout),
+            FeedForward(self._tcn_dim, self._tcn_dim, self._tcn_dropout),
+        ), 'tcn', 'max', self._tcn_dim)
+
+        self.reversed_tcn = GatedResidualNet(torch.nn.Sequential(
+            TCN(self._tcn_dim, [self._tcn_dim]*self._tcn_stack_depth, self._tcn_kernel_size, self._tcn_dropout),
+            FeedForward(self._tcn_dim, self._tcn_dim, self._tcn_dropout),
+        ), 'tcn', 'max', self._tcn_dim)
+
+        fc_input_size = self._attention_dim + self._tcn_dim*2
+        fc_hidden_size = 2**math.ceil(round(math.log2(fc_input_size))) // 2
+        self.fc = torch.nn.Sequential(
+            FeedForward(fc_input_size, fc_hidden_size, self._fc_dropout),
+            torch.nn.Sequential(
+                weight_norm(torch.nn.Linear(fc_hidden_size, self._fc_output_size)),
+                torch.nn.Dropout(self._fc_dropout),
+            ),
+        )
+
+    @classmethod
+    def from_pretrained_embedding(cls, 
+                                  attention_implementation: Literal['local-attention', 'natten'],
+                                  attention_window_size:int,
+                                  embedding_weight:torch.tensor,
+                                  padding_idx:int,
+                                  freeze_embedding=True,
+                                  ):
         # the tensor does not get updated in the learning process.
-        self.embedding =  torch.nn.Embedding.from_pretrained(embedding_weight, freeze=True, padding_idx=pad_idx, max_norm=True)
+        embedding =  torch.nn.Embedding.from_pretrained(embedding_weight, freeze=freeze_embedding, padding_idx=padding_idx, max_norm=True)
+        return cls(attention_implementation, attention_window_size, embedding)
 
-        self._attention_dim = self.embedding.embedding_dim
-        self.attention = new_attention(attention_implementation, 
-                                       dim=self._attention_dim, 
-                                       num_heads=self._attention_num_heads, 
-                                       window_size=attention_window_size,
-                                      )
-        self.attention_layer_norm = torch.nn.LayerNorm(self._attention_dim)
-        self.attention_gelu = torch.nn.GELU()
-        self.attention_dropout = torch.nn.Dropout(self._attention_dropout)
-
-        self._tcn_0_input_size = self._attention_dim
-        self.tcn_0_input_pool = torch.nn.AdaptiveMaxPool1d(self._tcn_0_input_size) # (embedding out, attention out) -> 
-        self.tcn_0 = TemporalConvNet(self._tcn_0_input_size, self._tcn_0_num_channels, self._tcn_0_kernel_size, self._tcn_0_dropout)
-        self.tcn_0_res_block = GatedResidualBlock('max', self._tcn_0_output_size)
-        self.tcn_0_layer_norm = torch.nn.LayerNorm(self._tcn_0_output_size)
-        self.tcn_0_gelu = torch.nn.GELU()
-        self.tcn_0_dropout = torch.nn.Dropout(self._tcn_0_dropout)
-
-        self._tcn_1_input_size = self._attention_dim + self._tcn_0_output_size
-        self.tcn_1 = TemporalConvNet(self._tcn_1_input_size, self._tcn_1_num_channels, self._tcn_1_kernel_size, self._tcn_1_dropout)
-        self.tcn_1_res_block = GatedResidualBlock('max', self._tcn_1_output_size)
-        self.tcn_1_layer_norm = torch.nn.LayerNorm(self._tcn_1_output_size)
-        self.tcn_1_gelu = torch.nn.GELU()
-        self.tcn_1_dropout = torch.nn.Dropout(self._tcn_1_dropout)
-
-        self.fc_input_pool = torch.nn.AdaptiveMaxPool1d(self._fc_pool_output_size)
-        self.fc = torch.nn.Linear(self._fc_input_size, self._fc_output_size)
-        # self.fc_layer_norm = torch.nn.LayerNorm(self._fc_output_size)
-        self.fc_dropout = torch.nn.Dropout(self._fc_dropout)
+    @classmethod
+    def from_new_embedding(cls, 
+                           attention_implementation: Literal['local-attention', 'natten'],
+                           attention_window_size:int,
+                           num_embeddings:int,
+                           embedding_dim:int,
+                           padding_idx:int=0,
+                           ):
+        embedding =  torch.nn.Embedding(num_embeddings, embedding_dim, padding_idx, max_norm=True)
+        return cls(attention_implementation, attention_window_size, embedding)
 
     def forward(self, features_seqs):
         out = self.embedding(features_seqs)
-        embedding_out = out.clone()
+        out = self.input(out)
 
         out = self.attention(out)
-        out = self.attention_layer_norm(out)
-        out = self.attention_gelu(out)
-        out = self.attention_dropout(out)
-        attention_copy1 = out.clone()
-        attention_copy2 = out.clone()
+        attention_out = out.clone()
 
-        out = torch.cat((embedding_out, out), dim=2)
-        out = self.tcn_0_input_pool(out)
-        out = out.transpose(1, 2)
-        out = self.tcn_0(out) # (batch_size, *, max_length) -> (batch_size, *, max_length)
-        out = out.transpose(1, 2)
-        out = self.tcn_0_res_block(attention_copy1, out)
-        out = self.tcn_0_layer_norm(out)
-        out = self.tcn_0_gelu(out)
-        out = self.tcn_0_dropout(out)
-        tcn_0_out = out.clone()
+        out = self.forward_tcn(out)
+        forward_out = out.clone()
 
-        inverted_attention_out = torch.flip(attention_copy2, (1, )) # inverted
-        out = torch.cat((inverted_attention_out, out), dim=2)
-        out = out.transpose(1, 2)
-        out = self.tcn_1(out) # (batch_size, *, max_length) -> (batch_size, *, max_length)
-        out = out.transpose(1, 2)
-        out = self.tcn_1_res_block(tcn_0_out, out)
-        out = self.tcn_1_layer_norm(out)
-        out = self.tcn_1_gelu(out)
-        out = self.tcn_1_dropout(out)
+        out = torch.flip(out, (1, )) # reversed
+        out = self.reversed_tcn(out)
+        out = torch.flip(out, (1, ))
 
-        out = self.fc_input_pool(out)
+        out = torch.cat((attention_out, forward_out, out), dim=-1)
         out = self.fc(out)
-        # out = self.fc_layer_norm(out)
-        out =  self.fc_dropout(out)
 
         return out
 
@@ -171,9 +193,9 @@ class Codec:
                labels_seqs:Optional[Sequence[str]]=None, 
                return_tensor:bool=True,
                device:Union[str, torch.device, int]=None,
-               ) -> Union[Tuple[torch.tensor, torch.tensor, Sequence[int]], Tuple[torch.tensor, Sequence[int]]]:
-        lengths = torch.tensor([len(text) for text in texts])
-        max_length = torch.max(lengths)
+               ) -> Tuple[torch.tensor, torch.tensor, Sequence[int]]:
+        lengths = [len(text) for text in texts]
+        max_length = max(lengths)
 
         # sequence length must be divisible by window size for local attention
         if max_length % self.attention_window_size != 0:
@@ -181,17 +203,19 @@ class Codec:
         else:
             padded_length = max_length
 
+        vocab_indices_seqs = [self.vocab.lookup_indices(list(text)) for text in texts]
+
         features_seqs = []
         targets_seqs = []
-        features_seqs = [self.vocab.lookup_indices(list(text)) for text in texts]
-        features_seqs = [features + [self.feature_pad_value]*(padded_length - lengths[idx]) for idx, features in enumerate(features_seqs)]
+        features_seqs = [array.array('i', features) + array.array('i', [self.feature_pad_value]*(padded_length-lengths[idx])) for idx, features in enumerate(vocab_indices_seqs)]
         if labels_seqs:
-            targets_seqs = [labels + [self.label_pad_value]*(padded_length - lengths[idx]) for idx, labels in enumerate(labels_seqs)]
+            targets_seqs = [array.array('i', labels) + array.array('i', [self.label_pad_value]*(padded_length - lengths[idx])) for idx, labels in enumerate(labels_seqs)]
 
         if return_tensor:
             features_seqs = torch.tensor(features_seqs, device=device)
             if labels_seqs:
                 targets_seqs = torch.tensor(targets_seqs, device=device)
+            lengths = torch.tensor(lengths)
 
         if labels_seqs:
             return features_seqs, targets_seqs, lengths
@@ -205,6 +229,7 @@ if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='Inspect the model.')
     arg_parser.add_argument('--vocab_filepath', help='Path to vocab dict.')
     arg_parser.add_argument('--embedding_filepath', help='Path to embedding weight file.')
+    arg_parser.add_argument('--min_freq', type=int, default=100, help='The minimum frequency needed to include a token in the vocabulary.')
     arg_parser.add_argument('--padding_index', type=int, default=0, help='Index of padding token.')
     arg_parser.add_argument('--unknown_index', type=int, default=1, help='Index of unknown token.')
     args = arg_parser.parse_args()
@@ -213,10 +238,11 @@ if __name__ == '__main__':
     padding_index = args.padding_index
     unknown_index = args.unknown_index
     embedding_filepath = args.embedding_filepath
+    min_freq = args.min_freq
     attention_window_size = 3
 
     ordered_dict = load_vocab(vocab_filepath)
-    vocab = torchtext.vocab.vocab(ordered_dict)
+    vocab = torchtext.vocab.vocab(ordered_dict, min_freq)
     vocab.set_default_index(unknown_index)
     print(f'vocab size: {len(vocab)}')
 
@@ -224,11 +250,11 @@ if __name__ == '__main__':
         embedding_weight = torch.load(infile)
 
     codec = Codec(vocab, attention_window_size)
-    model = AttentionTCN('local-attention', attention_window_size, embedding_weight, padding_index)
+    model = AttentionTCN.from_pretrained_embedding('local-attention', attention_window_size, embedding_weight, padding_index)
     print(model)
     for name, p in model.named_parameters():
-        print(f'{name} parameters: {p.numel()}')
-    print(f'Total number of learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}\n')
+        print(f'{name} parameters: {p.numel() if not isinstance(p, torch.nn.parameter.UninitializedParameter) else "uninitialized"}')
+    print(f'Total number of learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad and not isinstance(p, torch.nn.parameter.UninitializedParameter))}\n')
     # test
     inputs = ['6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。', 
               'An implementation of local windowed attention for language modeling', 
@@ -237,10 +263,10 @@ if __name__ == '__main__':
     inputs, _ = codec.encode(inputs)
     outputs = model(inputs)
 
-    model = AttentionTCN('natten', attention_window_size, embedding_weight, padding_index)
+    model = AttentionTCN.from_new_embedding('natten', attention_window_size, num_embeddings=len(vocab), embedding_dim=32, padding_idx=padding_index)
     print(model)
     for name, p in model.named_parameters():
-        print(f'{name} parameters: {p.numel()}')
-    print(f'Total number of learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
+        print(f'{name} parameters: {p.numel() if not isinstance(p, torch.nn.parameter.UninitializedParameter) else "uninitialized"}')
+    print(f'Total number of learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad and not isinstance(p, torch.nn.parameter.UninitializedParameter))}')
     # test
     outputs = model(inputs)

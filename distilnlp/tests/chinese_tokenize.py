@@ -1,6 +1,7 @@
 from unittest import TestCase, main
 
 from distilnlp.chinese_tokenize.feature import label_single, label_head, label_middle, label_tail, label_ignore, text_to_features_labels
+from distilnlp import chinese_tokenize
 
 class TestFeature(TestCase):
     def test_segmented_mix_to_features_labels(self):
@@ -69,6 +70,13 @@ class TestFeature(TestCase):
         expect_features = list(text)
         expect_labels = [label_single, label_single, label_head, label_tail, label_single, label_single, label_single, label_single, label_single, label_single, label_single, label_single, label_ignore, label_ignore]
         self.assertEqual(text_to_features_labels(text, segments), (expect_features, expect_labels))
+
+    def test_chinese_tokenize(self):
+        chinese = ['6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。']
+        segmented = [
+            ['6', '.', ' ', '讲习班', '的', '参加者', '是在', '国家', '和', '区域', '应急', '机构', '和', '服务', '部门', '的', '管理', '岗位', '上', '工作', '了', '若干', '年', '的', '专业', '人员', '。'],
+        ]
+        self.assertEqual(chinese_tokenize(chinese), segmented)
 
 if __name__ == '__main__':
     main()

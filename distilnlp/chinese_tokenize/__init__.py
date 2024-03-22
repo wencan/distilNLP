@@ -18,11 +18,12 @@ DEVICE = (
 
 def chinese_tokenize(texts: Sequence[str]):
     model_name = 'chinese_tokenize'
-    state_dict_version = '20240226004520'
-    state_dict_url = f'https://raw.githubusercontent.com/wencan/distilNLP/7ed6589da69c32a7a2dcc2491248e752df878905/assets/model/chinese_tokenize/state_dict_20240226004520.pt'
+    commit_version = 'a4989493cb8cd2bd14d725e13557e9f7b3760c2c'
+    state_dict_version = '20240322093302'
+    state_dict_url = f'https://raw.githubusercontent.com/wencan/distilNLP/{commit_version}/assets/model/chinese_tokenize/state_dict_{state_dict_version}.pt'
     state_dict_filepath = downloaded_model_filepath(model_name, state_dict_version, state_dict_url, content_type='state_dict', postfix='pt')
-    vocab_version = '20240226004520'
-    vocab_url = f'https://raw.githubusercontent.com/wencan/distilNLP/7ed6589da69c32a7a2dcc2491248e752df878905/assets/model/chinese_tokenize/vocab_20240226004520.txt'
+    vocab_version = '20240322093302'
+    vocab_url = f'https://raw.githubusercontent.com/wencan/distilNLP/{commit_version}/assets/model/chinese_tokenize/vocab_{vocab_version}.txt'
     vocab_filepath = downloaded_model_filepath(model_name, vocab_version, vocab_url, content_type='vocab', postfix='txt')
 
     vocab_ordered_dict = load_vocab(vocab_filepath)
