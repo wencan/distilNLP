@@ -1,4 +1,5 @@
-# From https://github.com/lucidrains/local-attention/blob/master/local_attention/local_attention.py
+# Original Version: https://github.com/lucidrains/local-attention/blob/master/local_attention/local_attention.py
+# Edited Version: https://github.com/wencan/local-attention/blob/master/local_attention/local_attention.py
 
 import math
 
@@ -6,7 +7,6 @@ import torch
 from torch import nn, einsum
 import torch.nn.functional as F
 
-from einops import rearrange, repeat, pack, unpack
 
 from .rotary import SinusoidalEmbeddings, apply_rotary_pos_emb
 
@@ -118,8 +118,8 @@ class LocalAttention(nn.Module):
 
         shape, autopad, pad_value, window_size, causal, look_backward, look_forward, shared_qk = q.shape, self.autopad, -1, default(window_size, self.window_size), self.causal, self.look_backward, self.look_forward, self.shared_qk
 
-        # https://github.com/arogozhnikov/einops/blob/master/docs/4-pack-and-unpack.ipynb
-        (q, packed_shape), (k, _), (v, _) = map(lambda t: pack([t], '* n d'), (q, k, v))
+        packed_shape = [q.size()[:2]]
+        q, k, v = map(lambda t:t.reshape((-1, t.size(2), t.size(3))), (q, k, v))
 
         # auto padding
 
@@ -139,11 +139,11 @@ class LocalAttention(nn.Module):
             k = l2norm(k)
 
         seq = torch.arange(n, device = device)
-        b_t = rearrange(seq, '(w n) -> 1 w n', w = windows, n = window_size)
+        b_t = seq.view((1, windows, window_size))
 
         # bucketing
 
-        bq, bk, bv = map(lambda t: rearrange(t, 'b (w n) d -> b w n d', w = windows), (q, k, v))
+        bq, bk, bv = map(lambda t: t.unflatten(1, (windows, -1)), (q, k, v))
 
         bq = bq * scale
 
@@ -167,8 +167,8 @@ class LocalAttention(nn.Module):
         bq_t = b_t
         bq_k = look_around(b_t, **look_around_kwargs)
 
-        bq_t = rearrange(bq_t, '... i -> ... i 1')
-        bq_k = rearrange(bq_k, '... j -> ... 1 j')
+        bq_t = bq_t.unsqueeze(-1)
+        bq_k = bq_k.unsqueeze(-2)
 
         pad_mask = bq_k == pad_value
 
@@ -178,7 +178,7 @@ class LocalAttention(nn.Module):
             heads = attn_bias.shape[0]
             assert (b % heads) == 0
 
-            attn_bias = repeat(attn_bias, 'h i j -> (b h) 1 i j', b = b // heads)
+            attn_bias = attn_bias.repeat(torch.Size((b//heads,)) + (1, )*(attn_bias.dim()-1)).unsqueeze(1)
             sim = sim + attn_bias
 
         mask_value = max_neg_value(sim)
@@ -220,10 +220,10 @@ class LocalAttention(nn.Module):
             if autopad:
                 _, mask = pad_to_multiple(mask, window_size, dim = -1, value = False)
 
-            mask = rearrange(mask, '... (w n) -> (...) w n', w = windows, n = window_size)
+            mask = mask.unflatten(-1, (windows, window_size))
             mask = look_around(mask, **{**look_around_kwargs, 'pad_value': False})
-            mask = rearrange(mask, '... j -> ... 1 j')
-            mask = repeat(mask, 'b ... -> (b h) ...', h = h)
+            mask = mask.unsqueeze(-2)
+            mask = mask.repeat(torch.Size((h,)) + (1,)*(mask.dim()-1))
             sim = sim.masked_fill(~mask, mask_value)
             del mask
 
@@ -235,10 +235,10 @@ class LocalAttention(nn.Module):
         # aggregation
 
         out = einsum('b h i j, b h j e -> b h i e', attn, bv)
-        out = rearrange(out, 'b w n d -> b (w n) d')
+        out = out.flatten(1, 2)
 
         if autopad:
             out = out[:, :orig_seq_len, :]
 
-        out, *_ = unpack(out, packed_shape, '* n d')
+        out = out.view(packed_shape[0] + out.size()[-2:])
         return out
