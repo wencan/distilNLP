@@ -128,7 +128,7 @@ def cross_train_valid(accelerator: Accelerator,
     train_ratio = 1 - valid_ratio
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=1)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=1, eps=1e-10)
 
     for epoch in range(num_epochs):
         train_set, valid_set = concat_random_split(train_valid_set, [train_ratio, valid_ratio])
@@ -191,6 +191,8 @@ def worker_init_fn(worker_id):
     pass
 
 if __name__ == '__main__':
+    from torchinfo import summary
+
     logging.basicConfig(handlers=[
         logging.FileHandler(f'logs/{datetime.now().isoformat()}.log', mode='w'),
         logging.StreamHandler(sys.stdout),
@@ -291,8 +293,8 @@ if __name__ == '__main__':
         model.load_state_dict(state_dict)
     else:
         log('train a new model from scratch.')
-    log(model)
-    log(f'Total number of learnable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad and not isinstance(p, torch.nn.parameter.UninitializedParameter))}')
+    test_inputs, _ = codec.encode(['6. 讲习班的参加者是在国家和区域应急机构和服务部门的管理岗位上工作了若干年的专业人员。'])
+    log(summary(model, input_data=test_inputs, depth=5, verbose=0))
     
     def test():
         test_batch_sampler = BucketSampler(test_set, batch_size, drop_last=False)
